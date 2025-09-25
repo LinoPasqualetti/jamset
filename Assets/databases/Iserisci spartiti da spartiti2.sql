@@ -1,0 +1,29 @@
+insert into spartiti
+(IdBra,
+    titolo,
+    autore,
+    strumento,
+    volume,
+    PrimoLInk,
+    TipoMulti,
+    TipoDocu,
+    ArchivioProvenienza,
+    NumPag,
+    NumOrig,
+    IdVolume,
+    IdAutore)
+select 
+IdBra,
+    titolo,
+    autore,
+    strumento,
+    volume,
+    PrimoLInk,
+    TipoMulti,
+    TipoDocu,
+    ArchivioProvenienza,
+    NumPag,
+    NumOrig,
+    IdVolume,
+    IdAutore
+from spartiti2

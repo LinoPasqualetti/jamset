@@ -931,8 +931,6 @@ class _CsvViewerScreenState extends State<CsvViewerScreen> {
                             color: Colors.red,
                           ),
                           children: <TextSpan>[
-                            TextSpan(text: 'Mat: ', style: TextStyle(fontWeight: FontWeight.w500, color: coloreDettagliSecondari)),
-                            TextSpan(text: tipoMulti.isNotEmpty ? tipoMulti : "N/D", style: TextStyle(fontWeight: FontWeight.normal, color: coloreDettagliPrimari)),
                             TextSpan(text: 'Tit: ', style: TextStyle(fontWeight: FontWeight.w500, color: coloreDettagliSecondari)),
                             TextSpan(text: titolo, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: coloreTitolo)),
 // Strum (se decommentato, assicurati la sintassi if ...[])
@@ -940,13 +938,23 @@ class _CsvViewerScreenState extends State<CsvViewerScreen> {
 //   TextSpan(text: 'StrTraspo:', style: TextStyle(fontWeight: FontWeight.w500, color: coloreDettagliSecondari)),
 //   TextSpan(text: strumento, style: TextStyle(fontWeight: FontWeight.normal, color: coloreTitolo)),
 // ],
+                          if (numPag.isNotEmpty) ...[
                             TextSpan(text: ' A Pag: ', style: TextStyle(fontWeight: FontWeight.w500, color: coloreDettagliSecondari)),
                             TextSpan(text: numPag, style: TextStyle(fontWeight: FontWeight.normal, color: coloreDettagliPrimari)),
+                          ],
 // Volume (se decommentato, assicurati la sintassi if ...[])
                             if (volume.isNotEmpty) ...[ // Assumendo che la variabile sia 'volume' e non 'Volume' per coerenza
                                TextSpan(text: ' del Volume: ', style: TextStyle(fontWeight: FontWeight.w500, color: coloreDettagliSecondari)),
                                TextSpan(text: volume, style: TextStyle(fontWeight: FontWeight.normal, color: coloreDettagliPrimari)),
                              ],
+                            // Volume (se decommentato, assicurati la sintassi if ...[])
+                            if (provenienza.isNotEmpty) ...[ // Assumendo che la variabile sia 'volume' e non 'Volume' per coerenza
+                              TextSpan(text: ' Prov: ', style: TextStyle(fontWeight: FontWeight.w500, color: coloreDettagliSecondari)),
+                              TextSpan(text: provenienza, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: coloreTitolo)),
+                            ],
+                            TextSpan(text: ' Mat: ', style: TextStyle(fontWeight: FontWeight.w500, color: coloreDettagliSecondari)),
+                            TextSpan(text: tipoMulti.isNotEmpty ? tipoMulti : "N/D", style: TextStyle(fontWeight: FontWeight.normal, color: coloreDettagliPrimari)),
+
                           ],
                         ),
                       ),
@@ -956,7 +964,7 @@ class _CsvViewerScreenState extends State<CsvViewerScreen> {
                   if (titolo != 'N/D' && volume != 'N/D')
                     IconButton(
                       icon: const Icon(Icons.picture_as_pdf_outlined, color: Colors.redAccent),
-                      tooltip: 'Apri PDF',
+                      tooltip: 'Apri File',
                       onPressed: () {
                         _handleOpenPdfAction(
                           titolo: titolo,
