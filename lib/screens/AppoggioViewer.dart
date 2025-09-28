@@ -7,11 +7,11 @@ import 'dart:convert';
 // Rimuovi questo se non lo usi più: import 'package:jamset/screens/device_selection_screen.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 //Pacchetti per apertura files (PDF o altri) e per i percorsi
-// Per aprire file
+import 'package:open_filex/open_filex.dart'; // Per aprire file
 // Per aprire URL
 // Per manipolare i percorsi, aggiungi path: ^X.Y.Z a pubspec.yaml
 // ... altri import
-
+import 'package:url_launcher/url_launcher.dart'; // NECESSARIO PER url_launcher per aprire file su Browser
 
 class CsvViewerScreen extends StatefulWidget {
   const CsvViewerScreen({super.key});
@@ -25,6 +25,233 @@ class _CsvViewerScreenState extends State<CsvViewerScreen> {
   List<List<dynamic>> _filteredCsvData = [];
   final TextEditingController _searchController = TextEditingController();
   String _basePdfPath = ""; // Variabile per memorizzare il path base dei PDF
+  // NUOVE VARIABILI PER LA MAPPATURA DINAMICA DELLE COLONNE
+  Map<String, int> _columnIndexMap = {};
+  List<String> _csvHeaders = []; // Per tenere traccia delle intestazioni effettive
+  // Nomi delle colonne che CERCHI nel CSV (devono corrispondere a quelli nel tuo file)
+  // !! AGGIUNGI O VERIFICA QUESTE RIGHE !!
+  final bool _csvHasHeaders = true; // Valore predefinito, puoi cambiarlo o impostarlo diversamente
+
+  // INDICI FISSI (usati SE _csvHasHeaders è false)
+  // DEVI DEFINIRE QUESTI INDICI IN BASE AL TUO FORMATO CSV SENZA INTESTAZIONE
+  // Queste dovrebbero essere costanti se i loro valori non cambiano mai.
+  // Se sono usate solo all'interno di questa classe, possono essere campi static const.
+  // Campi per FORMATO CSV SENZA INTESTAZIONE
+  static const int fixedIndexTitolo = 3; // Esempio: titolo nella prima colonna
+  static const int fixedIndexNumPag = 8; // Esempio seconda colonna
+  static const int fixedIndexNumOrig = 9; //
+  static const int fixedIndexVolume = 7; //
+  static const int fixedIndexAutore = 4; // Esempio
+  static const int fixedIndexStrumento = 5; // Esempio
+  static const int fixedIndexProvenienza = 6;
+  static const int fixedIndexIdBra = 0;
+  static const int fixedIndexPrimoLink = 10;
+// Aggiungi altre chiavi se ti servono altri campi in modo dinamico// Campi per CSV con INTESTAZIONE
+  static const String keyTitolo = 'Titolo'; // Adatta questi nomi ESATTAMENTE a come sono nel tuo CSV
+  static const String keyNumPag = 'NumPag';
+  static const String keyVolume = 'Volume';
+  static const String keyAutore = 'Autore';
+  static const String keyStrumento = 'strumento';
+  static const String keyIdBra = 'IdBra'; // Adattamento ESATTAMENTE a come sono nel tuo CSV
+  static const String keyPrimoLink = 'PrimoLink';
+  static const String keyNumOrig = 'NumOrig';
+  static const String keyTipoDocu = 'TipoDocu';
+  static const String keyArchivioProvenienza = 'ArchivioProvenienza';
+  static const String keyTipoMulti = 'TipoMulti';
+  static const String keyIdVolume = 'IdVolume';
+
+  String? get $numPag => null;
+// Aggiungi altre chiavi se ti servono altri campi in modo dinamico
+  // All'interno della classe _CsvViewerScreenState:
+  String _getCellValue(List<dynamic> row, String columnKey, {String defaultValue = 'N/D'}) {
+    // Usa la chiave normalizzata (minuscola) se la tua mappa è stata creata con chiavi minuscole
+    String normalizedKey = columnKey; // O columnKey.toLowerCase() se le chiavi nella mappa sono minuscole
+    // e le costanti key... sono usate direttamente come arrivano.
+    // Dipende da come hai implementato _createColumnIndexMap.
+    // Coerenza è la chiave.
+
+    if (_columnIndexMap.containsKey(normalizedKey)) { // o _columnIndexMap.containsKey(columnKey)
+      int? colIndex = _columnIndexMap[normalizedKey]; // o _columnIndexMap[columnKey]
+      if (colIndex != null && colIndex < row.length && row[colIndex] != null) {
+        return row[colIndex].toString();
+      }
+    }
+    return defaultValue;
+  }
+// All'interno della classe _CsvViewerScreenState:
+//Inizio trattamento CSV con INTESTAZIONE
+  // All'interno della classe _CsvViewerScreenState:
+
+  Map<String, int> _createColumnIndexMap(List<String> headers) {
+    final Map<String, int> map = {};
+    for (int i = 0; i < headers.length; i++) {
+      // Normalizza l'header dal CSV (es. minuscolo, trim)
+      // È importante che la normalizzazione qui sia consistente con come
+      // ti aspetti che le tue 'key...' corrispondano.
+      // Se le tue 'key...' sono CaseSensitive e esattamente come nel CSV,
+      // potresti omettere .toLowerCase(). Ma è più robusto normalizzare.
+      String headerFromFile = headers[i].toString().trim(); // Potresti voler fare anche .toLowerCase()
+      // se le tue key... sono tutte minuscole
+      // o se vuoi un match case-insensitive.
+      // Per ora, lo lascio così, assumendo che
+      // le tue key... debbano matchare esattamente (case sensitive)
+      // le intestazioni del CSV dopo il trim.
+      // O, meglio ancora, normalizza entrambe a minuscolo.
+
+      // Se le tue costanti 'key...' sono definite con capitalizzazione specifica
+      // (es. keyTitolo = 'Titolo') e vuoi fare un confronto case-insensitive,
+      // allora converti sia headerFromFile sia la costante key a minuscolo prima del confronto.
+      // Esempio con normalizzazione a minuscolo (più robusto):
+      String normalizedHeaderFromFile = headerFromFile.toLowerCase();
+
+      if (normalizedHeaderFromFile == keyIdBra.toLowerCase()) {
+        map[keyIdBra] = i;
+      } else if (normalizedHeaderFromFile == keyTipoMulti.toLowerCase()) map[keyTipoMulti] = i;
+      else if (normalizedHeaderFromFile == keyTipoDocu.toLowerCase()) map[keyTipoDocu] = i;
+      else if (normalizedHeaderFromFile == keyTitolo.toLowerCase()) map[keyTitolo] = i;
+      else if (normalizedHeaderFromFile == keyAutore.toLowerCase()) map[keyAutore] = i;
+      // La tua keyStrumento è 'strumento'. Se nel CSV l'header è 'strumento',
+      // questo non farà match a meno che l'header del CSV non sia esattamente 'Strum' (case insensitive).
+      // Devi essere consistente.
+      else if (normalizedHeaderFromFile == keyStrumento.toLowerCase()) map[keyStrumento] = i;
+      else if (normalizedHeaderFromFile == keyArchivioProvenienza.toLowerCase()) map[keyArchivioProvenienza] = i;
+      else if (normalizedHeaderFromFile == keyVolume.toLowerCase()) map[keyVolume] = i;
+      else if (normalizedHeaderFromFile == keyNumPag.toLowerCase()) map[keyNumPag] = i;
+      else if (normalizedHeaderFromFile == keyNumOrig.toLowerCase()) map[keyNumOrig] = i;
+      else if (normalizedHeaderFromFile == keyPrimoLink.toLowerCase()) map[keyPrimoLink] = i;
+      else if (normalizedHeaderFromFile == keyIdVolume.toLowerCase()) map[keyIdVolume] = i;
+    }
+
+    // Debugging opzionale:
+    if (headers.isNotEmpty && map.isEmpty) {
+      print("ATTENZIONE: _columnIndexMap è vuota ma il CSV aveva intestazioni. Controllare la corrispondenza tra le 'key...' definite e le intestazioni effettive nel file CSV.");
+      print("Intestazioni dal CSV (normalizzate): ${headers.map((h) => h.toString().trim().toLowerCase()).toList()}");
+      print("Chiavi attese (normalizzate): ${[keyIdBra, keyTipoMulti, keyTipoDocu, keyTitolo, keyAutore, keyStrumento, keyArchivioProvenienza, keyVolume, keyNumPag, keyNumOrig, keyPrimoLink, keyIdVolume].map((k) => k.toLowerCase()).toList()}");
+    } else if (headers.isNotEmpty && !map.containsKey(keyTitolo)) { // Esempio di controllo per una colonna essenziale
+      print("ATTENZIONE: La colonna '$keyTitolo' non è stata trovata/mappata dalle intestazioni del CSV.");
+      print("Intestazioni dal CSV: $headers");
+    }
+    return map;
+  }
+//Inizio PDF SU BROWSER
+  Future<void> _openPdfInExternalBrowser(String localPdfPath, String pageNumberStr) async { // Rinominata per chiarezza e per evitare conflitti se ci fosse già openPdfInBrowser
+    int? pageNumber = int.tryParse(pageNumberStr);
+    if (pageNumber == null || pageNumber < 1) {
+      print('Numero di pagina non valido: $pageNumberStr');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Numero di pagina non valido: $pageNumberStr')),
+        );
+      }
+      return;
+    }
+
+    // Non c'è più bisogno di: String formattedPath = localPdfPath.replaceAll(r'\', '/');
+    // Uri.file lo gestisce.
+
+    Uri fileUri;
+    // NOTA: Platform.isWindows non è affidabile per il web per determinare il formato del path.
+    // Se il path viene DAL CSV ed è in formato Windows (P:\...), allora Uri.file con windows:true
+    // è corretto anche se Flutter è compilato per web, perché stai interpretando un path *esterno*.
+    // Tuttavia, l'accesso diretto a 'file:///' da un'app web è problematico.
+    // Questa logica è più pensata per mobile/desktop che lanciano un browser esterno.
+    if (!kIsWeb && Platform.isWindows) {
+      fileUri = Uri.file(localPdfPath, windows: true);
+    } else if (kIsWeb) {
+      // Per il web, se il localPdfPath è un path del filesystem locale dell'utente (es. "P:\..."),
+      // questo TENTATIVO di aprirlo direttamente in un browser esterno con file:///
+      // probabilmente fallirà a causa delle policy di sicurezza del browser.
+      // È più un costrutto per "se il browser *potesse* accedere a questo path locale".
+      // Per Windows path style sul web, è comunque utile windows:true per la corretta formattazione dell'URI
+      // nel caso (improbabile) che il browser lo permetta.
+      // Dovrai assicurarti che localPdfPath sia già URL encoded se contiene spazi, ecc.
+      // o che sia un path che Uri.file può gestire correttamente.
+      // Spesso, per i file locali sul web, l'utente li seleziona, e ottieni bytes o un blob URL.
+      print("Tentativo di costruire un URI file:// per il web. L'accesso diretto potrebbe essere bloccato dal browser.");
+      // Assumiamo che se è web e il path è stile Windows, vogliamo windows:true
+      // Questo è speculativo per il web con `file:///`
+      if (localPdfPath.contains(r'\') && localPdfPath.contains(':')) { // heuristica per path windows
+        fileUri = Uri.file(localPdfPath, windows: true);
+      } else {
+        fileUri = Uri.parse(localPdfPath); // Se è già un URL o un path stile Unix
+      }
+    }
+    else { // Per altre piattaforme desktop/mobile non Windows
+      fileUri = Uri.file(localPdfPath);
+    }
+
+
+    final Uri urlWithPage = fileUri.replace(fragment: 'page=$pageNumber');
+    print('Attempting to launch URL: ${urlWithPage.toString()}');
+
+    if (await canLaunchUrl(urlWithPage)) {
+      await launchUrl(
+        urlWithPage,
+        mode: LaunchMode.externalApplication,
+      );
+    } else {
+      print('Could not launch ${urlWithPage.toString()}');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Impossibile aprire il link: ${urlWithPage.toString()}')),
+        );
+      }
+    }
+  }
+//Fine PDF SU Browser
+//Fine trattamento CSV con INTESTAZIONE
+  String _getValueFromRow(List<dynamic> row, String columnKeyOrIdentifier, {String defaultValue = 'N/D'}) {
+    if (_csvHasHeaders) {
+      // MODALITÀ 1: CSV CON INTESTAZIONE
+      // columnKeyOrIdentifier è una CHIAVE (es. keyTitolo)
+      // Usiamo _columnIndexMap per trovare l'indice numerico corretto.
+      if (_columnIndexMap.containsKey(columnKeyOrIdentifier)) {
+        int? colIndex = _columnIndexMap[columnKeyOrIdentifier];
+        if (colIndex != null && colIndex < row.length && row[colIndex] != null) {
+          return row[colIndex].toString();
+        }
+      }
+    } else {
+      // MODALITÀ 2: CSV SENZA INTESTAZIONE (CAMPI POSIZIONALI)
+      // columnKeyOrIdentifier è un IDENTIFICATORE LOGICO che usiamo nello switch
+      // per mappare all'INDICE FISSO corretto.
+      int? colIndex;
+      switch (columnKeyOrIdentifier) {
+        case keyTitolo: // 'keyTitolo' qui è solo un'etichetta per dire "voglio il titolo"
+          colIndex = fixedIndexTitolo; // Prendiamo l'indice fisso del titolo
+          break;
+        case keyNumPag:
+          colIndex = fixedIndexNumPag;
+          break;
+        case keyVolume:
+          colIndex = fixedIndexVolume;
+          break;
+        case keyAutore:
+          colIndex = fixedIndexAutore;
+          break;
+        case keyStrumento:
+          colIndex = fixedIndexStrumento;
+          break;
+        case keyIdBra:
+          colIndex = fixedIndexIdBra;
+          break;
+        case keyPrimoLink:
+          colIndex = fixedIndexPrimoLink;
+          break;
+        case keyArchivioProvenienza:
+          colIndex = fixedIndexProvenienza;
+          break;
+        case keyNumOrig:
+          colIndex = fixedIndexNumOrig;
+          break;
+      }
+
+      if (colIndex != null && colIndex < row.length && row[colIndex] != null) {
+        return row[colIndex].toString();
+      }
+    }
+    return defaultValue; // Valore di fallback se tutto il resto fallisce
+  }
 
   @override
   void initState() {
@@ -73,13 +300,48 @@ class _CsvViewerScreenState extends State<CsvViewerScreen> {
             fileContent = await file.readAsString(encoding: latin1);
           }
         }
+        //Inizio trattamento CSV con intestazioni
+        final allRowsFromFile = const CsvToListConverter(fieldDelimiter: ';').convert(fileContent);
 
-        final fields = const CsvToListConverter(fieldDelimiter: ';').convert(fileContent);
+        if (allRowsFromFile.isEmpty) {
+          setState(() {
+            _csvData = [];
+            _filteredCsvData = [];
+            _columnIndexMap = {};
+            _csvHeaders = [];
+          });
+          // Potresti voler mostrare un messaggio qui
+          return;
+        }
+
+        if (_csvHasHeaders) {
+          if (allRowsFromFile.isNotEmpty) { // Controlla se c'è almeno una riga per l'intestazione
+            _csvHeaders = List<String>.from(allRowsFromFile[0].map((h) => h.toString().trim())); // Aggiunto .trim()
+            _columnIndexMap = _createColumnIndexMap(_csvHeaders);
+            if (allRowsFromFile.length > 1) {
+              _csvData = allRowsFromFile.sublist(1);
+            } else {
+              _csvData = []; // Solo intestazione, nessun dato
+            }
+          } else { // File vuoto, gestito sopra, ma per sicurezza
+            _csvHeaders = [];
+            _columnIndexMap = {};
+            _csvData = [];
+          }
+        } else {
+          _csvHeaders = []; // Nessuna intestazione
+          _columnIndexMap = {}; // Non usata per l'accesso primario
+          _csvData = allRowsFromFile;
+        }
 
         setState(() {
-          _csvData = fields;
-          _filteredCsvData = fields;
+          //_csvData = fields; // Rimuovi questa riga
+          _filteredCsvData = List<List<dynamic>>.from(_csvData);
         });
+
+
+        //Fine trattamento CSV con intestazioni
+
 
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -121,8 +383,8 @@ class _CsvViewerScreenState extends State<CsvViewerScreen> {
   void _handleOpenPdfAction({
     required String titolo,
     required String volume,
-    required String numPag,
-    required String numOrig,
+    required String NumPag,
+    required String NumOrig,
     required String idBra,
     required String TipoMulti,
     required String TipoDocu,
@@ -138,8 +400,8 @@ class _CsvViewerScreenState extends State<CsvViewerScreen> {
     ///ESTRAE I Dati Selezionati
     String SelTitolo = titolo;
     String SelVolume = volume;
-    String SelNumPag = numPag;
-    String SelNumOrig = numOrig;
+    String SelNumPag = NumPag;
+    String SelNumOrig = NumOrig;
     String SelLink = link;
     String SelIdBra = idBra;
     String SelTipoMulti = TipoMulti;
@@ -152,6 +414,7 @@ class _CsvViewerScreenState extends State<CsvViewerScreen> {
     String nomeFile;
     String nomeFileEstratto = ""; // Variabile per il nome file estratto da SelLink
     String percorsoDirectoryEstratta = ""; // Variabile per la directory estratta da SelLink
+    String percorsoPdfDaAprireNelDialogo = ""; // Questa sarà la variabile che contiene il path WEB da aprire
 
 
 
@@ -211,8 +474,8 @@ class _CsvViewerScreenState extends State<CsvViewerScreen> {
     print('--- Azione Chiama Apertura PDF ---');
     print('Tetolo: $titolo');
     print('Volume (come nome file?): $nomeFileDaVolume');
-    print('Numero Pagina (da usare con lettore PDF): $numPag');
-    print('Numero Originale: $numOrig');
+    print('Numero Pagina (da usare con lettore PDF): $NumPag');
+    print('Numero Originale: $NumOrig');
     print('Path Base Configurato: $_basePdfPath');
     //print('Path PDF Calcolato (esempio): $finalPath');
     print('Link diretto da CSV: $link');
@@ -254,7 +517,7 @@ class _CsvViewerScreenState extends State<CsvViewerScreen> {
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('Dati per PDF: Titolo: $titolo, Volume: $volume, Pag: $numPag. Path base: $_basePdfPath'),
+        content: Text('Dati per PDF: Titolo: $titolo, Volume: $volume, Pag: $NumPag. Path base: $_basePdfPath'),
         //duration: const Duration(seconds: 10),
       ),
     );
@@ -344,15 +607,69 @@ class _CsvViewerScreenState extends State<CsvViewerScreen> {
               const SizedBox(width: 8), // Aggiunge un po' di spazio tra i bottoni (opzionale)
               ElevatedButton( // Ho cambiato in ElevatedButton per distinguerlo, ma puoi usare TextButton
                 child: const Text('Visualizza PDF'),
-                onPressed: () {
+                onPressed: () async  {
                   // RECUPERA IL VALORE CORRENTE DAL TEXTFIELD TRAMITE IL SUO CONTROLLER
                   String percorsoPdfDaAprire = searchController.text.trim(); // .trim() per rimuovere spazi bianchi inutili
 
                   // Puoi anche recuperare il valore della pagina se hai un campo per quello
                   // String paginaDaAprire = paginaController.text.trim();
-
+////%%%%%%%%%%%%%%%%%%%%%%%%%% CARTELLA SU TCL NXTPaper (non ha una scheda e dunque questo è il percorso)
+                  //   files /storage/emulated/0/JamsetPDF
+////%%%%%%%%%%%%%%%%%%%%%%%%%% CARTELLA SU TCL NXTPaper (non ha una scheda e dunque questo è il percorso)
                   print('Bottone "Visualizza PDF" premuto. Percorso PDF da usare: $percorsoPdfDaAprire');
+                  print('Pagina da aprire: $SelNumPag');
+                  /// Inizia qui la chiamata a visualizza WEB un if per verifica con if (kIsWeb) {
 
+                  Uri fileUri;
+                  // NOTA: Platform.isWindows non è affidabile per il web per determinare il formato del path.
+                  // Se il path viene DAL CSV ed è in formato Windows (P:\...), allora Uri.file con windows:true
+                  // è corretto anche se Flutter è compilato per web, perché stai interpretando un path *esterno*.
+                  // Tuttavia, l'accesso diretto a 'file:///' da un'app web è problematico.
+                  // Questa logica è più pensata per mobile/desktop che lanciano un browser esterno.
+                  if (!kIsWeb && Platform.isWindows) {
+                    fileUri = Uri.file(percorsoPdfDaAprire, windows: true);
+                  } else if (kIsWeb) {
+                    // Per il web, se il localPdfPath è un path del filesystem locale dell'utente (es. "P:\..."),
+                    // questo TENTATIVO di aprirlo direttamente in un browser esterno con file:///
+                    // probabilmente fallirà a causa delle policy di sicurezza del browser.
+                    // È più un costrutto per "se il browser *potesse* accedere a questo path locale".
+                    // Per Windows path style sul web, è comunque utile windows:true per la corretta formattazione dell'URI
+                    // nel caso (improbabile) che il browser lo permetta.
+                    // Dovrai assicurarti che localPdfPath sia già URL encoded se contiene spazi, ecc.
+                    // o che sia un path che Uri.file può gestire correttamente.
+                    // Spesso, per i file locali sul web, l'utente li seleziona, e ottieni bytes o un blob URL.
+                    print("Tentativo di costruire un URI file:// per il web. L'accesso diretto potrebbe essere bloccato dal browser.");
+                    // Assumiamo che se è web e il path è stile Windows, vogliamo windows:true
+                    // Questo è speculativo per il web con `file:///`
+                    if (percorsoPdfDaAprire.contains(r'\') && percorsoPdfDaAprire.contains(':')) { // heuristica per path windows
+                      fileUri = Uri.file(percorsoPdfDaAprire, windows: true);
+                      percorsoPdfDaAprire = fileUri.toString();
+                      print('Percorso PDF Rielaborato per WEB : $percorsoPdfDaAprire');
+                    } else {
+                      fileUri = Uri.parse(percorsoPdfDaAprire);// Se è già un URL o un path stile Unix
+
+                      //percorsoPdfDaAprire = fileUri;
+                      percorsoPdfDaAprire = fileUri.toString();
+                      print('Percorso PDF Rielaborato per WEB : $percorsoPdfDaAprire');
+
+                    }
+                  }
+                  final OpenResult result
+                  = await OpenFilex.open(percorsoPdfDaAprire);
+
+                  if (result.type != ResultType.done) {
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Impossibile aprire il PDF: ${result.message}')),
+                      );
+                    }
+                  } else {
+                    // Opzionale: puoi mostrare un messaggio di successo o non fare nulla
+                    // perché l'app esterna si sarà aperta.
+                  }
+
+                  /// Finisce qui la chiamata a visualizza WEB un if per verifica con if (kIsWeb) {
+                  // }
                   // Chiudi il dialogo e passa i dati necessari per l'azione successiva.
                   // Puoi passare una Map per strutturare meglio i dati.
                   Navigator.of(dialogContext).pop({
@@ -484,7 +801,19 @@ class _CsvViewerScreenState extends State<CsvViewerScreen> {
     return Scaffold(
       backgroundColor: Colors.yellow[100],
       appBar: AppBar(
-        title: const Text('Visualizzatore CSV Spartiti'),
+        title: const Text('Spartiti Visualizzatore da CSV o DB',
+          style: TextStyle(
+            fontSize: 18.0, // Imposta la dimensione del font desiderata (es. 18)
+            color: Colors.white, //
+            backgroundColor: Colors.teal, // Mantieni o adatta questo colore
+            // foregroundColor: Colors.white,
+            //backgroundColor: Colors.blue,
+            //  fontWeight: FontWeight.bold, // Imposta il font weight desiderato (es. FontWeight.bold)
+            // fontWeight: FontWeight.normal, // Puoi anche cambiare il peso se vuoi
+          ),
+        ),
+
+
         actions: [ // Aggiungiamo un bottone per configurare il path
           if (!kIsWeb)
             IconButton(
@@ -514,18 +843,26 @@ class _CsvViewerScreenState extends State<CsvViewerScreen> {
           ),
         ),
       ),
+
       body: _csvData.isEmpty
           ? Center(
         child: Padding(
           padding: const EdgeInsets.all(16.0),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
-            children: [
+            children: <Widget> [
+              Image.asset( // <<< RIMOSSO Positioned.fill
+                'assets/images/SherlockCerca.png',
+                height: 400,
+                fit: BoxFit.scaleDown,
+              ),
+              const SizedBox(height: 16), // Aggiungi spazio se necessario
               const Text(
                 'Carica un elenco Brani Musicali (CSV) per visualizzarne il contenuto.',
                 textAlign: TextAlign.center,
                 style: TextStyle(fontSize: 16),
               ),
+              const SizedBox(height: 16), // Aggiungi spazio se necessario
               const SizedBox(height: 20),
               ElevatedButton.icon(
                 icon: const Icon(Icons.upload_file_outlined),
@@ -544,85 +881,125 @@ class _CsvViewerScreenState extends State<CsvViewerScreen> {
         itemCount: _filteredCsvData.length,
         itemBuilder: (context, index) {
           final row = _filteredCsvData[index];
-          // Verifica la lunghezza della riga per evitare RangeError
-          final bool hasEnoughColumns = row.length >= 11; // Assumendo almeno 11 colonne per i dati necessari
-
-          // COSTRUZIONE PER CIASCUNA RIGA CSV DEI SINGOLI CAMPI DEL BRANO (DA 0 A 10)
-          final String IdBra = hasEnoughColumns && row[0] != null ? row[0].toString() : 'N/D';
-          final String TipoMulti = hasEnoughColumns && row[1] != null ? row[1].toString() : 'N/D';
-          final String TipoDocu = hasEnoughColumns && row[2] != null ? row[2].toString() : 'N/D';
-          final String titolo = hasEnoughColumns && row[3] != null ? row[3].toString() : 'N/D';
-          final String autore = hasEnoughColumns && row[4] != null ? row[4].toString() : 'N/D';
-          final String strumento = hasEnoughColumns && row[5] != null ? row[5].toString() : 'N/D';
-          final String Provenienza = hasEnoughColumns && row[6] != null ? row[6].toString() : 'N/D';
-          final String volume = hasEnoughColumns && row[7] != null ? row[7].toString() : 'N/D'; // Nome del file PDF o parte di esso
-          final String numPag = hasEnoughColumns && row[8] != null ? row[8].toString() : 'N/D'; // Pagina nel PDF
-          final String numOrig = hasEnoughColumns && row[9] != null ? row[9].toString() : 'N/D'; // Pagina originale (se diversa)
-          final String link = hasEnoughColumns && row[10] != null ? row[10].toString() : ''; // Link diretto (colonna 10)
-
+          // USA _getValueFromRow per estrarre i dati in modo dinamico
+          final String idBra = _getValueFromRow(row, keyIdBra);
+          final String tipoMulti = _getValueFromRow(row, keyTipoMulti);
+          final String tipoDocu = _getValueFromRow(row, keyTipoDocu);
+          final String titolo = _getValueFromRow(row, keyTitolo);
+          final String autore = _getValueFromRow(row, keyAutore);
+          final String strumento = _getValueFromRow(row, keyStrumento);
+// Nota: la tua key è keyArchivioProvenienza.
+// Se la colonna nel CSV è 'Provenienza', e la tua keyArchivioProvenienza è 'ArchivioProvenienza',
+// devi assicurarti che _createColumnIndexMap gestisca questa corrispondenza o che la key sia allineata.
+// Per ora, assumiamo che tu voglia estrarre usando la key definita.
+          final String provenienza = _getValueFromRow(row, keyArchivioProvenienza);
+          final String volume = _getValueFromRow(row, keyVolume);
+          final String numPag = _getValueFromRow(row, keyNumPag);
+          final String numOrig = _getValueFromRow(row, keyNumOrig);
+          final String link = _getValueFromRow(row, keyPrimoLink, defaultValue: ''); // Giusto usare defaultValue se il link può mancare
+          // final Color rowBackgroundColor = Colors.grey[100]!; // Grigio chiaro fisso
+          final Color rowBackgroundColor = index.isEven
+              ? Colors.white // Per le righe pari (puoi cambiarlo)
+              : const Color(0xFFF0F4F8); // Un azzurrino/grigio molto chiaro per le righe dispari (puoi cambiarlo)
+          // Definiamo alcuni colori che vogliamo usare per i testi
+          const Color coloreTitolo = Colors.black87; // o Colors.blue[800]
+          const Color coloreDettagliPrimari = Colors.teal; // o Colors.green[700]
+          const Color coloreDettagliSecondari = Colors.black54; // o Colors.grey[600]
+          const Color coloreAutore = Colors.indigo; // o Colors.purple
+          // Oppure usa Colors.grey[50]!, Colors.blueGrey[50]!, ecc.
+          ///
+////VERSIONE Versione 2: Con SingleChildScrollView che avvolge l'intera Row per la gestione della CARD
+          ////VERSIONE ClipRect Expanded per la gestione della CARD
 
           return Card(
-            margin: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
+            margin: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 1.0),
+            color: rowBackgroundColor,
+            elevation: 1.0,
             child: Padding(
-              padding: const EdgeInsets.all(12.0),
+              padding: const EdgeInsets.symmetric(horizontal: 10.0, vertical: 2.0),
               child: Row(
                 children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('Tit-  $titolo  StrumTraspo: $strumento a pag: $numPag del volume: $volume',
-                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                          overflow: TextOverflow.ellipsis,
-                        ),
+                  Expanded( // Forza il RichText (e il ClipRect) a usare lo spazio disponibile
+                    child: ClipRect( // Applica il clipping al RichText
+                      child: RichText(
+                        overflow: TextOverflow.ellipsis, // Ellipsis agisce prima del clip se il testo eccede maxLines
+                        maxLines: 1, // Decommentato e impostato per un comportamento prevedibile con clip/ellipsis
+                        text: TextSpan(
+                          text: "$strumento ",
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Colors.red,
+                          ),
+                          children: <TextSpan>[
+                            TextSpan(text: 'Tit: ', style: TextStyle(fontWeight: FontWeight.w500, color: coloreDettagliSecondari)),
+                            TextSpan(text: titolo, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: coloreTitolo)),
+// Strum (se decommentato, assicurati la sintassi if ...[])
+// if (strumento.isNotEmpty) ...[
+//   TextSpan(text: 'StrTraspo:', style: TextStyle(fontWeight: FontWeight.w500, color: coloreDettagliSecondari)),
+//   TextSpan(text: strumento, style: TextStyle(fontWeight: FontWeight.normal, color: coloreTitolo)),
+// ],
+                            if (numPag.isNotEmpty) ...[
+                              TextSpan(text: ' A Pag: ', style: TextStyle(fontWeight: FontWeight.w500, color: coloreDettagliSecondari)),
+                              TextSpan(text: numPag, style: TextStyle(fontWeight: FontWeight.normal, color: coloreDettagliPrimari)),
+                            ],
+// Volume (se decommentato, assicurati la sintassi if ...[])
+                            if (volume.isNotEmpty) ...[ // Assumendo che la variabile sia 'volume' e non 'Volume' per coerenza
+                              TextSpan(text: ' del Volume: ', style: TextStyle(fontWeight: FontWeight.w500, color: coloreDettagliSecondari)),
+                              TextSpan(text: volume, style: TextStyle(fontWeight: FontWeight.normal, color: coloreDettagliPrimari)),
+                            ],
+                            // Volume (se decommentato, assicurati la sintassi if ...[])
+                            if (provenienza.isNotEmpty) ...[ // Assumendo che la variabile sia 'volume' e non 'Volume' per coerenza
+                              TextSpan(text: ' Prov: ', style: TextStyle(fontWeight: FontWeight.w500, color: coloreDettagliSecondari)),
+                              TextSpan(text: provenienza, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: coloreTitolo)),
+                            ],
+                            TextSpan(text: ' Mat: ', style: TextStyle(fontWeight: FontWeight.w500, color: coloreDettagliSecondari)),
+                            TextSpan(text: tipoMulti.isNotEmpty ? tipoMulti : "N/D", style: TextStyle(fontWeight: FontWeight.normal, color: coloreDettagliPrimari)),
 
-                        const SizedBox(height: 4),
-                        //Text('Autore: $autore', style: TextStyle(fontSize: 14, color: Colors.grey[700])),
-                        //Text('Strumento: $strumento', style: TextStyle(fontSize: 14, color: Colors.grey[700])),
-                        //Text('Volume/File: $volume - Pag: $numPag (Orig: $numOrig)', style: TextStyle(fontSize: 14, color: Colors.grey[700])),
-                        // if (link.isNotEmpty) ...[
-                        //   const SizedBox(height: 2),
-                        //   Text('Link: $link', style: TextStyle(fontSize: 12, color: Colors.blue, fontStyle: FontStyle.italic)),
-                        // ]
-                      ],
+                          ],
+                        ),
+                      ),
                     ),
                   ),
-                  // Bottone per l'azione
-                  if(hasEnoughColumns) // Mostra il bottone solo se ci sono abbastanza dati
+// Bottone per l'azione
+                  if (titolo != 'N/D' && volume != 'N/D')
                     IconButton(
                       icon: const Icon(Icons.picture_as_pdf_outlined, color: Colors.redAccent),
-                      tooltip: 'Apri PDF',
+                      tooltip: 'Apri File',
                       onPressed: () {
                         _handleOpenPdfAction(
                           titolo: titolo,
                           volume: volume,
-                          numPag: numPag,
-                          numOrig: numOrig,
-                          idBra: IdBra,
-                          TipoMulti: TipoMulti,
-                          TipoDocu: TipoDocu,
+                          NumPag: numPag,
+                          NumOrig: numOrig,
+                          idBra: idBra,
+                          TipoMulti: tipoMulti,
+                          TipoDocu: tipoDocu,
                           strumento: strumento,
-                          Provenienza: Provenienza,
+                          Provenienza: provenienza,
                           link: link,
-                          ///SOLO COPIA INIZ
-                          ///    required String titolo,
-                          //     required String volume,
-                          //     required String numPag,
-                          //     required String numOrig,
-                          //     required String idBra,
-                          //     required String TipoMulti,
-                          //     required String TipoDocu,
-                          //     required String strumento,
-                          //     required String Provenienza,
-                          //     required String link,
-                          ///SOLO COPIA FINE
                         );
                       },
                     ),
+                  if (!kIsWeb)
+                    IconButton(
+                      icon: const Icon(Icons.settings_outlined),
+                      tooltip: 'Configura Path PDF',
+                      onPressed: () { // <<< AGGIUNTA FUNZIONE ANONIMA
+                        _askForBasePath(
+                          currentTitolo: titolo, // Assicurati che i nomi dei parametri corrispondano
+                          currentVolume: volume, // alla definizione di _askForBasePath
+                          currentNumPag: numPag,
+                        );
+                      },
+                    ),
+
                 ],
+
               ),
             ),
           );
+          //FINE Versione 2: Con SingleChildScrollView che avvolge l'intera Row per la gestione della CARD
+
         },
       ),
       floatingActionButton: _csvData.isEmpty ? null : FloatingActionButton.extended( // Nascondi se non ci sono dati

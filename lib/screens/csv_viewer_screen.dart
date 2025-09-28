@@ -18,38 +18,38 @@ class CsvViewerScreen extends StatefulWidget {
 
   @override
   State<CsvViewerScreen> createState() => _CsvViewerScreenState();
-}
+} // <--- Assicurati che questa parentesi chiuda CsvViewerScreen
 
 class _CsvViewerScreenState extends State<CsvViewerScreen> {
+
+  //TextEditingController _searchController = TextEditingController();final TextEditingController _cercaTitoloController = TextEditingController();
+  final TextEditingController _cercaTitoloController = TextEditingController();
+  final TextEditingController _cercaAutoreController = TextEditingController();
   List<List<dynamic>> _csvData = [];
   List<List<dynamic>> _filteredCsvData = [];
-  final TextEditingController _searchController = TextEditingController();
+  // Rimuovi o rinomina il vecchio _searchController se non serve più per una ricerca generica
+
+  // Potresti voler mantenere anche le stringhe di query separate
+  String _queryTitolo = '';
+  String _queryAutore = '';
+//  final TextEditingController _searchController = TextEditingController();
   String _basePdfPath = ""; // Variabile per memorizzare il path base dei PDF
   // NUOVE VARIABILI PER LA MAPPATURA DINAMICA DELLE COLONNE
+  bool _csvHasHeaders = true; // o come la gestisci
   Map<String, int> _columnIndexMap = {};
   List<String> _csvHeaders = []; // Per tenere traccia delle intestazioni effettive
   // Nomi delle colonne che CERCHI nel CSV (devono corrispondere a quelli nel tuo file)
   // !! AGGIUNGI O VERIFICA QUESTE RIGHE !!
-  final bool _csvHasHeaders = true; // Valore predefinito, puoi cambiarlo o impostarlo diversamente
+  //final bool _csvHasHeaders = true; // Valore predefinito, puoi cambiarlo o impostarlo diversamente
 
   // INDICI FISSI (usati SE _csvHasHeaders è false)
-  // DEVI DEFINIRE QUESTI INDICI IN BASE AL TUO FORMATO CSV SENZA INTESTAZIONE
-  // Queste dovrebbero essere costanti se i loro valori non cambiano mai.
-  // Se sono usate solo all'interno di questa classe, possono essere campi static const.
-  // Campi per FORMATO CSV SENZA INTESTAZIONE
-  static const int fixedIndexTitolo = 3; // Esempio: titolo nella prima colonna
-  static const int fixedIndexNumPag = 8; // Esempio seconda colonna
-  static const int fixedIndexNumOrig = 9; //
-  static const int fixedIndexVolume = 7; //
-  static const int fixedIndexAutore = 4; // Esempio
-  static const int fixedIndexStrumento = 5; // Esempio
-  static const int fixedIndexProvenienza = 6;
-  static const int fixedIndexIdBra = 0;
-  static const int fixedIndexPrimoLink = 10;
+
 // Aggiungi altre chiavi se ti servono altri campi in modo dinamico// Campi per CSV con INTESTAZIONE
   static const String keyTitolo = 'Titolo'; // Adatta questi nomi ESATTAMENTE a come sono nel tuo CSV
   static const String keyNumPag = 'NumPag';
   static const String keyVolume = 'Volume';
+  static const String keyPercRadice = 'PercRadice';
+  static const String keyPercResto = 'PercResto';
   static const String keyAutore = 'Autore';
   static const String keyStrumento = 'strumento';
   static const String keyIdBra = 'IdBra'; // Adattamento ESATTAMENTE a come sono nel tuo CSV
@@ -120,6 +120,8 @@ class _CsvViewerScreenState extends State<CsvViewerScreen> {
       else if (normalizedHeaderFromFile == keyNumOrig.toLowerCase()) map[keyNumOrig] = i;
       else if (normalizedHeaderFromFile == keyPrimoLink.toLowerCase()) map[keyPrimoLink] = i;
       else if (normalizedHeaderFromFile == keyIdVolume.toLowerCase()) map[keyIdVolume] = i;
+      else if (normalizedHeaderFromFile == keyPercRadice.toLowerCase()) map[keyPercRadice] = i;
+      else if (normalizedHeaderFromFile == keyPercResto.toLowerCase()) map[keyPercResto] = i;
     }
 
     // Debugging opzionale:
@@ -215,40 +217,7 @@ class _CsvViewerScreenState extends State<CsvViewerScreen> {
       // MODALITÀ 2: CSV SENZA INTESTAZIONE (CAMPI POSIZIONALI)
       // columnKeyOrIdentifier è un IDENTIFICATORE LOGICO che usiamo nello switch
       // per mappare all'INDICE FISSO corretto.
-      int? colIndex;
-      switch (columnKeyOrIdentifier) {
-        case keyTitolo: // 'keyTitolo' qui è solo un'etichetta per dire "voglio il titolo"
-          colIndex = fixedIndexTitolo; // Prendiamo l'indice fisso del titolo
-          break;
-        case keyNumPag:
-          colIndex = fixedIndexNumPag;
-          break;
-        case keyVolume:
-          colIndex = fixedIndexVolume;
-          break;
-        case keyAutore:
-          colIndex = fixedIndexAutore;
-          break;
-        case keyStrumento:
-          colIndex = fixedIndexStrumento;
-          break;
-        case keyIdBra:
-          colIndex = fixedIndexIdBra;
-          break;
-        case keyPrimoLink:
-          colIndex = fixedIndexPrimoLink;
-          break;
-        case keyArchivioProvenienza:
-          colIndex = fixedIndexProvenienza;
-          break;
-        case keyNumOrig:
-          colIndex = fixedIndexNumOrig;
-          break;
-      }
 
-      if (colIndex != null && colIndex < row.length && row[colIndex] != null) {
-        return row[colIndex].toString();
-      }
     }
     return defaultValue; // Valore di fallback se tutto il resto fallisce
   }
@@ -256,22 +225,15 @@ class _CsvViewerScreenState extends State<CsvViewerScreen> {
   @override
   void initState() {
     super.initState();
-    _searchController.addListener(_filterData);
-    // TODO: Inizializza _basePdfPath qui, magari da SharedPreferences, un file di config,
-    // o chiedendolo all'utente alla prima apertura o tramite un'impostazione.
-    // Esempio temporaneo (DA MODIFICARE!):
-    if (!kIsWeb) { // Il path ha senso solo su piattaforme non web
-      // _basePdfPath = "/sdcard/Documenti/Spartiti/"; // Esempio per Android
-      // _basePdfPath = "C:\\Users\\TuoNome\\Documents\\Spartiti\\"; // Esempio per Windows
-    }
+    // NON aggiungere listener ai controller se il filtro è solo via bottone
   }
 
   @override
   void dispose() {
-    _searchController.dispose();
+    _cercaTitoloController.dispose();
+    _cercaAutoreController.dispose();
     super.dispose();
   }
-
   //Future<void> (_pickAndLoadCsv) async
   Future<void> _pickAndLoadCsv() async
   {
@@ -363,21 +325,76 @@ class _CsvViewerScreenState extends State<CsvViewerScreen> {
       }
     }
   }
-  /// Filtro del CSV (o del ResultSet
+  /// Filtro del CSV (o del ResultSetVecchia versione con un campo
+ //void _filterData() {
+ //   final query = _searchController.text.toLowerCase();
+  //setState(() {
+ //     if (query.isEmpty) {
+ //       _filteredCsvData = _csvData;
+ //     } else {
+ //       _filteredCsvData = _csvData.where((row) {
+ //         final titolo = row.length > 3 ? row[3].toString().toLowerCase() : '';
+ //         final autore = row.length > 4 ? row[4].toString().toLowerCase() : '';
+ //         return titolo.contains(query) || autore.contains(query);
+ //       }).toList();
+ //     }
+ //   });
+ // }
+// All'interno della classe _CsvViewerScreenState
+
+// Assicurati che queste costanti (chiavi delle colonne) siano definite correttamente
+// static const String keyTitolo = 'Titolo';
+// static const String keyAutore = 'Autore';
+
   void _filterData() {
-    final query = _searchController.text.toLowerCase();
+    // Le query _queryTitolo e _queryAutore sono già state aggiornate
+    // e convertite in minuscolo dal onPressed del bottone "Filtra".
+
     setState(() {
-      if (query.isEmpty) {
-        _filteredCsvData = _csvData;
+      // Se entrambi i campi di ricerca sono vuoti, mostra tutti i dati
+      if (_queryTitolo.isEmpty && _queryAutore.isEmpty) {
+        _filteredCsvData = List.from(_csvData);
       } else {
         _filteredCsvData = _csvData.where((row) {
-          final titolo = row.length > 3 ? row[3].toString().toLowerCase() : '';
-          final autore = row.length > 4 ? row[4].toString().toLowerCase() : '';
-          return titolo.contains(query) || autore.contains(query);
+          // Estrai i valori dalla riga usando le chiavi
+          final String titoloInRow = _getValueFromRow(
+            row,
+            keyTitolo,
+            defaultValue: '',
+          ).toLowerCase();
+
+          final String autoreInRow = _getValueFromRow(
+            row,
+            keyAutore,
+            defaultValue: '',
+          ).toLowerCase();
+
+          // Logica di filtro:
+          bool corrispondeTitolo = true; // Assume vero se il campo di ricerca titolo è vuoto
+          if (_queryTitolo.isNotEmpty) {
+            corrispondeTitolo = titoloInRow.contains(_queryTitolo);
+          }
+
+          bool corrispondeAutore = true; // Assume vero se il campo di ricerca autore è vuoto
+          if (_queryAutore.isNotEmpty) {
+            corrispondeAutore = autoreInRow.contains(_queryAutore);
+          }
+
+          // La riga deve corrispondere a entrambi i criteri di ricerca (se specificati)
+          return corrispondeTitolo && corrispondeAutore;
+
         }).toList();
       }
     });
   }
+
+
+    // Opzionale: scrolla la lista all'inizio dopo aver filtrato, se hai molti elementi
+    // if (_scrollController.hasClients) {
+    //   _scrollController.jumpTo(0.0);
+    // }
+  //}
+
 
   // Funzione chiamata quando si preme il bottone "Apri PDF"
   void _handleOpenPdfAction({
@@ -396,7 +413,8 @@ class _CsvViewerScreenState extends State<CsvViewerScreen> {
   }) async   {
     String nomeFileDaVolume = volume.endsWith('.pdf') ? volume : '$volume.pdf';
     String finalPath = kIsWeb ? "Non applicabile per web" : '$_basePdfPath$nomeFileDaVolume';
-    //String Prova = 'Un piccolo test';
+    //i campi sel sono relativi agli elementi della riga selezionata in apri pdf
+    // ;
     ///ESTRAE I Dati Selezionati
     String SelTitolo = titolo;
     String SelVolume = volume;
@@ -449,7 +467,7 @@ class _CsvViewerScreenState extends State<CsvViewerScreen> {
 // e la pulizia non l'ha tolto, questa logica sopra dovrebbe già funzionare.
 // Se il link originale NON AVESSE .pdf, e tu volessi aggiungerlo, sarebbe un'altra logica.
 // Ma dalla tua domanda, sembra che tu voglia PRESERVARE .pdf se c'è.
-
+    print("InizioAzione Chiama Apertura PDF _handleOpenPdfAction"); // con parametri
     print("Stringa originale (link): $link");
     print("Percorso pulito: $SelPercorso");
     print("Nomefile estratto (CON estensione) campo nomeFile: $nomeFile"); // Dovrebbe essere COLOBK.PDF
@@ -471,7 +489,7 @@ class _CsvViewerScreenState extends State<CsvViewerScreen> {
     print('Vediamo cos è SelProvenienza $SelProvenienza');
     print('Vediamo cos è SelBasePdfPath $SelBasePdfPath');
     print('Vediamo cos è FinalPath $finalPath');
-    print('--- Azione Chiama Apertura PDF ---');
+    print('--- Azione Chiama Apertura PDF _handleOpenPdfAction ---');
     print('Tetolo: $titolo');
     print('Volume (come nome file?): $nomeFileDaVolume');
     print('Numero Pagina (da usare con lettore PDF): $NumPag');
@@ -794,90 +812,152 @@ class _CsvViewerScreenState extends State<CsvViewerScreen> {
     }
   }
 
+   // @override
+   // void initState() {
+   //   super.initState();
+      // NON aggiungere listener ai controller se il filtro è solo via bottone
+    //}
 
+    //@override
+    //void dispose() {
+    //  _cercaTitoloController.dispose();
+    //  _cercaAutoreController.dispose();
+    //  super.dispose();
+    //}
 
+  // qui c'era la vecchia logica con un solo campo@override
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.yellow[100],
+    // Rivedi questo intero blocco con attenzione per errori di sintassi
+    return
+    ////INIZIO Immagine di background
+      Stack(
+      children: <Widget>[
+      Positioned.fill( // Fa sì che l'immagine riempia lo Stack
+        child: Image.asset(
+          'assets/images/SherlockCerca2.png', // IL TUO PERCORSO PER L'IMMAGINE DI SHERLOCK
+          fit: BoxFit.cover, // Prova diverse opzioni di BoxFit (cover, contain, fill, etc.)
+          // per vedere quale si adatta meglio al tuo caso d'uso.
+          // Opzionale: puoi aggiungere un colore di sovrapposizione per scurire/schiarire
+          // o colorare l'immagine se il testo sopra è difficile da leggere.
+          // color: Colors.black.withOpacity(0.3),
+          // colorBlendMode: BlendMode.darken,
+        ),
+      ),
+    ////FINE  Immagine di background
+
+      Scaffold(
       appBar: AppBar(
-        title: const Text('Spartiti Visualizzatore da CSV o DB',
-          style: TextStyle(
-          fontSize: 18.0, // Imposta la dimensione del font desiderata (es. 18)
-          color: Colors.white, //
-            backgroundColor: Colors.teal, // Mantieni o adatta questo colore
-           // foregroundColor: Colors.white,
-            //backgroundColor: Colors.blue,
-          //  fontWeight: FontWeight.bold, // Imposta il font weight desiderato (es. FontWeight.bold)
- // fontWeight: FontWeight.normal, // Puoi anche cambiare il peso se vuoi
-        ),
-        ),
-
-
-        actions: [ // Aggiungiamo un bottone per configurare il path
-          if (!kIsWeb)
-            IconButton(
-              icon: const Icon(Icons.settings_outlined),
-              tooltip: 'Configura Path PDF',
-              onPressed: _askForBasePath,
-            ),
-        ],
+        title: const Text('Spartiti Visualizzatore'),
         bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(kToolbarHeight + 10),
+          preferredSize: const Size.fromHeight(120.0),
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-            child: TextField(
-              controller: _searchController,
-              decoration: InputDecoration(
-                hintText: 'Cerca per titolo o autore...',
-                prefixIcon: const Icon(Icons.search),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(30),
-                  borderSide: BorderSide.none,
+            padding: const EdgeInsets.all(8.0),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                TextField(
+                  controller: _cercaTitoloController,
+                  decoration: const InputDecoration(
+                    labelText: 'Cerca per Titolo',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
                 ),
-                filled: true,
-                contentPadding: const EdgeInsets.all(0),
-                fillColor: Colors.white.withOpacity(0.9), // Leggermente trasparente per non coprire troppo
-              ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: _cercaAutoreController,
+                  decoration: const InputDecoration(
+                    labelText: 'Cerca per Autore',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                ElevatedButton.icon(
+                  icon: const Icon(Icons.search),
+                  label: const Text('Filtra'),
+                  onPressed: () {
+                    _queryTitolo = _cercaTitoloController.text.toLowerCase();
+                    _queryAutore = _cercaAutoreController.text.toLowerCase();
+                    _filterData();
+                  },
+                ),
+              ],
             ),
           ),
         ),
       ),
+     // body: _csvData.isEmpty
+        body: _csvData.isEmpty ? _buildEmptyState() : _buildCsvList(),
 
-      body: _csvData.isEmpty
-          ? Center(
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: <Widget> [
-            Image.asset( // <<< RIMOSSO Positioned.fill
-              'assets/images/SherlockCerca.png',
-              height: 400,
-              fit: BoxFit.scaleDown,
-            ),
-            const SizedBox(height: 16), // Aggiungi spazio se necessario
-                 const Text(
-                'Carica un elenco Brani Musicali (CSV) per visualizzarne il contenuto.',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 16),
-              ),
-            const SizedBox(height: 16), // Aggiungi spazio se necessario
-              const SizedBox(height: 20),
-              ElevatedButton.icon(
-                icon: const Icon(Icons.upload_file_outlined),
-                label: const Text('Carica File CSV'),
-                onPressed: _pickAndLoadCsv,
-                style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                    textStyle: const TextStyle(fontSize: 16)
-                ),
-              )
-            ],
-          ),
-        ),
+    floatingActionButton: _csvData.isNotEmpty
+          ? FloatingActionButton.extended(
+        onPressed: _pickAndLoadCsv,
+        label: const Text('Nuovo CSV'),
+        icon: const Icon(Icons.file_upload),
       )
-          : ListView.builder(
+        : null,
+      ),
+      ],
+    );
+  }
+
+// Estrai questi metodi per una migliore leggibilità del build
+  Widget _buildEmptyState() {
+    // ... la tua logica per lo stato vuoto
+    return Container( // AVVOLGI CON CONTAINER
+      color: Colors.blueGrey ,
+      height: double.infinity,// IMPOSTA IL COLORE DI BACKGROUND DESIDERATO QUI
+      // Puoi usare Colors.amber, Colors.tealAccent.withOpacity(0.5), ecc.
+    child:Center(
+      child: Padding(
+    padding: const EdgeInsets.all(16.0),
+    child: Column(
+    mainAxisAlignment: MainAxisAlignment.center,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget> [
+        Image.asset(
+            'assets/images/SherlockCerca2.png',
+            height: 400,
+            width: 500,
+            fit: BoxFit.contain ,
+            errorBuilder: (context, error, stackTrace) {
+              return const Text('Errore caricamento immagine SherlockCerca2');
+            }
+        ),
+
+    const SizedBox(height: 16), // Aggiungi spazio se necessario
+    const Text(
+    'Carica un elenco Brani Musicali (CSV) per visualizzarne il contenuto.',
+    textAlign: TextAlign.center,
+    style: TextStyle(fontSize: 16),
+    ),
+        const SizedBox(height: 24),
+        const Text(
+          'Nessun file CSV caricato.',
+          textAlign: TextAlign.center,
+          style: TextStyle(fontSize: 18),
+        ),
+        const SizedBox(height: 16),
+        ElevatedButton.icon(
+          icon: const Icon(Icons.upload_file_outlined),
+          label: const Text('Carica File CSV'),
+          onPressed: _pickAndLoadCsv,
+        ),
+
+    ],
+    ),
+    ),
+    ),
+
+    );
+
+  }
+
+    Widget _buildCsvList() {
+      // ... la tua logica per ListView.builder con _filteredCsvData
+      return ListView.builder(
         itemCount: _filteredCsvData.length,
         itemBuilder: (context, index) {
           final row = _filteredCsvData[index];
@@ -888,28 +968,19 @@ class _CsvViewerScreenState extends State<CsvViewerScreen> {
           final String titolo = _getValueFromRow(row, keyTitolo);
           final String autore = _getValueFromRow(row, keyAutore);
           final String strumento = _getValueFromRow(row, keyStrumento);
-// Nota: la tua key è keyArchivioProvenienza.
-// Se la colonna nel CSV è 'Provenienza', e la tua keyArchivioProvenienza è 'ArchivioProvenienza',
-// devi assicurarti che _createColumnIndexMap gestisca questa corrispondenza o che la key sia allineata.
-// Per ora, assumiamo che tu voglia estrarre usando la key definita.
           final String provenienza = _getValueFromRow(row, keyArchivioProvenienza);
           final String volume = _getValueFromRow(row, keyVolume);
+          final String PercRadice = _getValueFromRow(row, keyPercRadice);
+          final String PercResto = _getValueFromRow(row, keyPercResto);
           final String numPag = _getValueFromRow(row, keyNumPag);
           final String numOrig = _getValueFromRow(row, keyNumOrig);
-          final String link = _getValueFromRow(row, keyPrimoLink, defaultValue: ''); // Giusto usare defaultValue se il link può mancare
-          // final Color rowBackgroundColor = Colors.grey[100]!; // Grigio chiaro fisso
+          final String link = _getValueFromRow(row, keyPrimoLink, defaultValue: '');
           final Color rowBackgroundColor = index.isEven
-              ? Colors.white // Per le righe pari (puoi cambiarlo)
-              : const Color(0xFFF0F4F8); // Un azzurrino/grigio molto chiaro per le righe dispari (puoi cambiarlo)
-          // Definiamo alcuni colori che vogliamo usare per i testi
-          const Color coloreTitolo = Colors.black87; // o Colors.blue[800]
-          const Color coloreDettagliPrimari = Colors.teal; // o Colors.green[700]
-          const Color coloreDettagliSecondari = Colors.black54; // o Colors.grey[600]
-          const Color coloreAutore = Colors.indigo; // o Colors.purple
-          // Oppure usa Colors.grey[50]!, Colors.blueGrey[50]!, ecc.
-///
-////VERSIONE Versione 2: Con SingleChildScrollView che avvolge l'intera Row per la gestione della CARD
-          ////VERSIONE ClipRect Expanded per la gestione della CARD
+              ? Colors.white
+              : const Color(0xFFF0F4F8);
+          const Color coloreTitolo = Colors.black87;
+          const Color coloreDettagliPrimari = Colors.teal;
+          const Color coloreDettagliSecondari = Colors.black54;
 
           return Card(
             margin: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 1.0),
@@ -919,48 +990,39 @@ class _CsvViewerScreenState extends State<CsvViewerScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 10.0, vertical: 2.0),
               child: Row(
                 children: [
-                  Expanded( // Forza il RichText (e il ClipRect) a usare lo spazio disponibile
-                    child: ClipRect( // Applica il clipping al RichText
+                  Expanded(
+                    child: ClipRect(
                       child: RichText(
-                        overflow: TextOverflow.ellipsis, // Ellipsis agisce prima del clip se il testo eccede maxLines
-                        maxLines: 1, // Decommentato e impostato per un comportamento prevedibile con clip/ellipsis
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
                         text: TextSpan(
                           text: "$strumento ",
-                          style: TextStyle(
+                          style: const TextStyle( // Aggiunto const
                             fontSize: 14,
                             color: Colors.red,
                           ),
                           children: <TextSpan>[
-                            TextSpan(text: 'Tit: ', style: TextStyle(fontWeight: FontWeight.w500, color: coloreDettagliSecondari)),
-                            TextSpan(text: titolo, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: coloreTitolo)),
-// Strum (se decommentato, assicurati la sintassi if ...[])
-// if (strumento.isNotEmpty) ...[
-//   TextSpan(text: 'StrTraspo:', style: TextStyle(fontWeight: FontWeight.w500, color: coloreDettagliSecondari)),
-//   TextSpan(text: strumento, style: TextStyle(fontWeight: FontWeight.normal, color: coloreTitolo)),
-// ],
-                          if (numPag.isNotEmpty) ...[
-                            TextSpan(text: ' A Pag: ', style: TextStyle(fontWeight: FontWeight.w500, color: coloreDettagliSecondari)),
-                            TextSpan(text: numPag, style: TextStyle(fontWeight: FontWeight.normal, color: coloreDettagliPrimari)),
-                          ],
-// Volume (se decommentato, assicurati la sintassi if ...[])
-                            if (volume.isNotEmpty) ...[ // Assumendo che la variabile sia 'volume' e non 'Volume' per coerenza
-                               TextSpan(text: ' del Volume: ', style: TextStyle(fontWeight: FontWeight.w500, color: coloreDettagliSecondari)),
-                               TextSpan(text: volume, style: TextStyle(fontWeight: FontWeight.normal, color: coloreDettagliPrimari)),
-                             ],
-                            // Volume (se decommentato, assicurati la sintassi if ...[])
-                            if (provenienza.isNotEmpty) ...[ // Assumendo che la variabile sia 'volume' e non 'Volume' per coerenza
-                              TextSpan(text: ' Prov: ', style: TextStyle(fontWeight: FontWeight.w500, color: coloreDettagliSecondari)),
-                              TextSpan(text: provenienza, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: coloreTitolo)),
+                            const TextSpan(text: 'Tit: ', style: TextStyle(fontWeight: FontWeight.w500, color: coloreDettagliSecondari)), // Aggiunto const
+                            TextSpan(text: titolo, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: coloreTitolo)), // Aggiunto const
+                            if (numPag.isNotEmpty) ...[
+                              const TextSpan(text: ' A Pag: ', style: TextStyle(fontWeight: FontWeight.w500, color: coloreDettagliSecondari)), // Aggiunto const
+                              TextSpan(text: numPag, style: const TextStyle(fontWeight: FontWeight.normal, color: coloreDettagliPrimari)), // Aggiunto const
                             ],
-                            TextSpan(text: ' Mat: ', style: TextStyle(fontWeight: FontWeight.w500, color: coloreDettagliSecondari)),
-                            TextSpan(text: tipoMulti.isNotEmpty ? tipoMulti : "N/D", style: TextStyle(fontWeight: FontWeight.normal, color: coloreDettagliPrimari)),
-
+                            if (volume.isNotEmpty) ...[
+                              const TextSpan(text: ' del Volume: ', style: TextStyle(fontWeight: FontWeight.w500, color: coloreDettagliSecondari)), // Aggiunto const
+                              TextSpan(text: volume, style: const TextStyle(fontWeight: FontWeight.normal, color: coloreDettagliPrimari)), // Aggiunto const
+                            ],
+                            if (provenienza.isNotEmpty) ...[
+                              const TextSpan(text: ' Prov: ', style: TextStyle(fontWeight: FontWeight.w500, color: coloreDettagliSecondari)), // Aggiunto const
+                              TextSpan(text: provenienza, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: coloreTitolo)), // Aggiunto const
+                            ],
+                            const TextSpan(text: ' Mat: ', style: TextStyle(fontWeight: FontWeight.w500, color: coloreDettagliSecondari)), // Aggiunto const
+                            TextSpan(text: tipoMulti.isNotEmpty ? tipoMulti : "N/D", style: const TextStyle(fontWeight: FontWeight.normal, color: coloreDettagliPrimari)), // Aggiunto const
                           ],
                         ),
                       ),
                     ),
                   ),
-// Bottone per l'azione
                   if (titolo != 'N/D' && volume != 'N/D')
                     IconButton(
                       icon: const Icon(Icons.picture_as_pdf_outlined, color: Colors.redAccent),
@@ -980,35 +1042,24 @@ class _CsvViewerScreenState extends State<CsvViewerScreen> {
                         );
                       },
                     ),
-                    if (!kIsWeb)
-                      IconButton(
-                        icon: const Icon(Icons.settings_outlined),
-                        tooltip: 'Configura Path PDF',
-                        onPressed: () { // <<< AGGIUNTA FUNZIONE ANONIMA
-                          _askForBasePath(
-                            currentTitolo: titolo, // Assicurati che i nomi dei parametri corrispondano
-                            currentVolume: volume, // alla definizione di _askForBasePath
-                            currentNumPag: numPag,
-                          );
-                        },
-                      ),
-
+                  if (!kIsWeb)
+                    IconButton(
+                      icon: const Icon(Icons.settings_outlined),
+                      tooltip: 'Configura Path PDF',
+                      onPressed: () {
+                        _askForBasePath(
+                          currentTitolo: titolo,
+                          currentVolume: volume,
+                          currentNumPag: numPag,
+                        );
+                      },
+                    ),
                 ],
-
               ),
             ),
           );
-          //FINE Versione 2: Con SingleChildScrollView che avvolge l'intera Row per la gestione della CARD
-
-         },
-      ),
-      floatingActionButton: _csvData.isEmpty ? null : FloatingActionButton.extended( // Nascondi se non ci sono dati
-        onPressed: _pickAndLoadCsv,
-        tooltip: 'Carica nuovo file CSV',
-        icon: const Icon(Icons.upload_file_outlined),
-        label: const Text("Nuovo CSV"),
-      ),
-    );
-  }
+        },
+      ); // Fine del ListView.builder
+    } // Fine del metodo _buildCsvList
+ // print("Fine caricamento Lista Brani");
 }
-

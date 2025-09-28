@@ -50,8 +50,6 @@ class _CsvViewerScreenState extends State<CsvViewerScreen> {
   static const String keyTitolo = 'Titolo'; // Adatta questi nomi ESATTAMENTE a come sono nel tuo CSV
   static const String keyNumPag = 'NumPag';
   static const String keyVolume = 'Volume';
-  static const String keyPercRadice = 'PercRadice';
-  static const String keyPercResto = 'PercResto';
   static const String keyAutore = 'Autore';
   static const String keyStrumento = 'strumento';
   static const String keyIdBra = 'IdBra'; // Adattamento ESATTAMENTE a come sono nel tuo CSV
@@ -122,8 +120,6 @@ class _CsvViewerScreenState extends State<CsvViewerScreen> {
       else if (normalizedHeaderFromFile == keyNumOrig.toLowerCase()) map[keyNumOrig] = i;
       else if (normalizedHeaderFromFile == keyPrimoLink.toLowerCase()) map[keyPrimoLink] = i;
       else if (normalizedHeaderFromFile == keyIdVolume.toLowerCase()) map[keyIdVolume] = i;
-      else if (normalizedHeaderFromFile == keyPercRadice.toLowerCase()) map[keyPercRadice] = i;
-      else if (normalizedHeaderFromFile == keyPercResto.toLowerCase()) map[keyPercResto] = i;
     }
 
     // Debugging opzionale:
@@ -304,7 +300,7 @@ class _CsvViewerScreenState extends State<CsvViewerScreen> {
             fileContent = await file.readAsString(encoding: latin1);
           }
         }
-        //Inizio trattamento CSV con intestazioni
+               //Inizio trattamento CSV con intestazioni
         final allRowsFromFile = const CsvToListConverter(fieldDelimiter: ';').convert(fileContent);
 
         if (allRowsFromFile.isEmpty) {
@@ -453,7 +449,7 @@ class _CsvViewerScreenState extends State<CsvViewerScreen> {
 // e la pulizia non l'ha tolto, questa logica sopra dovrebbe già funzionare.
 // Se il link originale NON AVESSE .pdf, e tu volessi aggiungerlo, sarebbe un'altra logica.
 // Ma dalla tua domanda, sembra che tu voglia PRESERVARE .pdf se c'è.
-    print("InizioAzione Chiama Apertura PDF _handleOpenPdfAction"); // con parametri
+
     print("Stringa originale (link): $link");
     print("Percorso pulito: $SelPercorso");
     print("Nomefile estratto (CON estensione) campo nomeFile: $nomeFile"); // Dovrebbe essere COLOBK.PDF
@@ -475,7 +471,7 @@ class _CsvViewerScreenState extends State<CsvViewerScreen> {
     print('Vediamo cos è SelProvenienza $SelProvenienza');
     print('Vediamo cos è SelBasePdfPath $SelBasePdfPath');
     print('Vediamo cos è FinalPath $finalPath');
-    print('--- Azione Chiama Apertura PDF _handleOpenPdfAction ---');
+    print('--- Azione Chiama Apertura PDF ---');
     print('Tetolo: $titolo');
     print('Volume (come nome file?): $nomeFileDaVolume');
     print('Numero Pagina (da usare con lettore PDF): $NumPag');
@@ -618,11 +614,11 @@ class _CsvViewerScreenState extends State<CsvViewerScreen> {
                   // Puoi anche recuperare il valore della pagina se hai un campo per quello
                   // String paginaDaAprire = paginaController.text.trim();
 ////%%%%%%%%%%%%%%%%%%%%%%%%%% CARTELLA SU TCL NXTPaper (non ha una scheda e dunque questo è il percorso)
-                  //   files /storage/emulated/0/JamsetPDF
+                //   files /storage/emulated/0/JamsetPDF
 ////%%%%%%%%%%%%%%%%%%%%%%%%%% CARTELLA SU TCL NXTPaper (non ha una scheda e dunque questo è il percorso)
                   print('Bottone "Visualizza PDF" premuto. Percorso PDF da usare: $percorsoPdfDaAprire');
                   print('Pagina da aprire: $SelNumPag');
-                  /// Inizia qui la chiamata a visualizza WEB un if per verifica con if (kIsWeb) {
+/// Inizia qui la chiamata a visualizza WEB un if per verifica con if (kIsWeb) {
 
                   Uri fileUri;
                   // NOTA: Platform.isWindows non è affidabile per il web per determinare il formato del path.
@@ -807,14 +803,14 @@ class _CsvViewerScreenState extends State<CsvViewerScreen> {
       appBar: AppBar(
         title: const Text('Spartiti Visualizzatore da CSV o DB',
           style: TextStyle(
-            fontSize: 18.0, // Imposta la dimensione del font desiderata (es. 18)
-            color: Colors.white, //
+          fontSize: 18.0, // Imposta la dimensione del font desiderata (es. 18)
+          color: Colors.white, //
             backgroundColor: Colors.teal, // Mantieni o adatta questo colore
-            // foregroundColor: Colors.white,
+           // foregroundColor: Colors.white,
             //backgroundColor: Colors.blue,
-            //  fontWeight: FontWeight.bold, // Imposta il font weight desiderato (es. FontWeight.bold)
-            // fontWeight: FontWeight.normal, // Puoi anche cambiare il peso se vuoi
-          ),
+          //  fontWeight: FontWeight.bold, // Imposta il font weight desiderato (es. FontWeight.bold)
+ // fontWeight: FontWeight.normal, // Puoi anche cambiare il peso se vuoi
+        ),
         ),
 
 
@@ -853,21 +849,20 @@ class _CsvViewerScreenState extends State<CsvViewerScreen> {
         child: Padding(
           padding: const EdgeInsets.all(16.0),
           child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: <Widget> [
-              Image.asset( // <<< RIMOSSO Positioned.fill
-                'assets/images/SherlockCerca.png',
-                height: 400,
-                // fit: BoxFit.scaleDown,
-                fit: BoxFit.cover,
-              ),
-              const SizedBox(height: 16), // Aggiungi spazio se necessario
-              const Text(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: <Widget> [
+            Image.asset( // <<< RIMOSSO Positioned.fill
+              'assets/images/SherlockCerca.png',
+              height: 400,
+              fit: BoxFit.scaleDown,
+            ),
+            const SizedBox(height: 16), // Aggiungi spazio se necessario
+                 const Text(
                 'Carica un elenco Brani Musicali (CSV) per visualizzarne il contenuto.',
                 textAlign: TextAlign.center,
                 style: TextStyle(fontSize: 16),
               ),
-              const SizedBox(height: 16), // Aggiungi spazio se necessario
+            const SizedBox(height: 16), // Aggiungi spazio se necessario
               const SizedBox(height: 20),
               ElevatedButton.icon(
                 icon: const Icon(Icons.upload_file_outlined),
@@ -899,8 +894,6 @@ class _CsvViewerScreenState extends State<CsvViewerScreen> {
 // Per ora, assumiamo che tu voglia estrarre usando la key definita.
           final String provenienza = _getValueFromRow(row, keyArchivioProvenienza);
           final String volume = _getValueFromRow(row, keyVolume);
-          final String PercRadice = _getValueFromRow(row, keyPercRadice);
-          final String PercResto = _getValueFromRow(row, keyPercResto);
           final String numPag = _getValueFromRow(row, keyNumPag);
           final String numOrig = _getValueFromRow(row, keyNumOrig);
           final String link = _getValueFromRow(row, keyPrimoLink, defaultValue: ''); // Giusto usare defaultValue se il link può mancare
@@ -914,12 +907,11 @@ class _CsvViewerScreenState extends State<CsvViewerScreen> {
           const Color coloreDettagliSecondari = Colors.black54; // o Colors.grey[600]
           const Color coloreAutore = Colors.indigo; // o Colors.purple
           // Oppure usa Colors.grey[50]!, Colors.blueGrey[50]!, ecc.
-          ///
+///
 ////VERSIONE Versione 2: Con SingleChildScrollView che avvolge l'intera Row per la gestione della CARD
           ////VERSIONE ClipRect Expanded per la gestione della CARD
 
           return Card(
-            //Emissione delle righe di descrizione di un brano (prese dalla lettura CSV o in futuro dal DB) genera anche i bottoni (Visualizza PDF e Impostazione del percorso per il file selezionato)
             margin: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 1.0),
             color: rowBackgroundColor,
             elevation: 1.0,
@@ -939,6 +931,8 @@ class _CsvViewerScreenState extends State<CsvViewerScreen> {
                             color: Colors.red,
                           ),
                           children: <TextSpan>[
+                            TextSpan(text: 'Mat: ', style: TextStyle(fontWeight: FontWeight.w500, color: coloreDettagliSecondari)),
+                            TextSpan(text: tipoMulti.isNotEmpty ? tipoMulti : "N/D", style: TextStyle(fontWeight: FontWeight.normal, color: coloreDettagliPrimari)),
                             TextSpan(text: 'Tit: ', style: TextStyle(fontWeight: FontWeight.w500, color: coloreDettagliSecondari)),
                             TextSpan(text: titolo, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: coloreTitolo)),
 // Strum (se decommentato, assicurati la sintassi if ...[])
@@ -946,23 +940,13 @@ class _CsvViewerScreenState extends State<CsvViewerScreen> {
 //   TextSpan(text: 'StrTraspo:', style: TextStyle(fontWeight: FontWeight.w500, color: coloreDettagliSecondari)),
 //   TextSpan(text: strumento, style: TextStyle(fontWeight: FontWeight.normal, color: coloreTitolo)),
 // ],
-                            if (numPag.isNotEmpty) ...[
-                              TextSpan(text: ' A Pag: ', style: TextStyle(fontWeight: FontWeight.w500, color: coloreDettagliSecondari)),
-                              TextSpan(text: numPag, style: TextStyle(fontWeight: FontWeight.normal, color: coloreDettagliPrimari)),
-                            ],
+                            TextSpan(text: ' A Pag: ', style: TextStyle(fontWeight: FontWeight.w500, color: coloreDettagliSecondari)),
+                            TextSpan(text: numPag, style: TextStyle(fontWeight: FontWeight.normal, color: coloreDettagliPrimari)),
 // Volume (se decommentato, assicurati la sintassi if ...[])
                             if (volume.isNotEmpty) ...[ // Assumendo che la variabile sia 'volume' e non 'Volume' per coerenza
-                              TextSpan(text: ' del Volume: ', style: TextStyle(fontWeight: FontWeight.w500, color: coloreDettagliSecondari)),
-                              TextSpan(text: volume, style: TextStyle(fontWeight: FontWeight.normal, color: coloreDettagliPrimari)),
-                            ],
-                            // Volume (se decommentato, assicurati la sintassi if ...[])
-                            if (provenienza.isNotEmpty) ...[ // Assumendo che la variabile sia 'volume' e non 'Volume' per coerenza
-                              TextSpan(text: ' Prov: ', style: TextStyle(fontWeight: FontWeight.w500, color: coloreDettagliSecondari)),
-                              TextSpan(text: provenienza, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: coloreTitolo)),
-                            ],
-                            TextSpan(text: ' Mat: ', style: TextStyle(fontWeight: FontWeight.w500, color: coloreDettagliSecondari)),
-                            TextSpan(text: tipoMulti.isNotEmpty ? tipoMulti : "N/D", style: TextStyle(fontWeight: FontWeight.normal, color: coloreDettagliPrimari)),
-
+                               TextSpan(text: ' del Volume: ', style: TextStyle(fontWeight: FontWeight.w500, color: coloreDettagliSecondari)),
+                               TextSpan(text: volume, style: TextStyle(fontWeight: FontWeight.normal, color: coloreDettagliPrimari)),
+                             ],
                           ],
                         ),
                       ),
@@ -971,13 +955,9 @@ class _CsvViewerScreenState extends State<CsvViewerScreen> {
 // Bottone per l'azione
                   if (titolo != 'N/D' && volume != 'N/D')
                     IconButton(
-                      // Icona per l'azione Apri File (_handleOpenPdfAction) con file contenuto nel campo link (Editato)
                       icon: const Icon(Icons.picture_as_pdf_outlined, color: Colors.redAccent),
-                      tooltip: 'Apri File',
+                      tooltip: 'Apri PDF',
                       onPressed: () {
-                        print('Prima di _handleOpenPdfAction titolo: $titolo');
-                        print(' Prima di _handleOpenPdfAction numPag: $numPag');
-                        print('Prima di _handleOpenPdfAction link: $link');
                         _handleOpenPdfAction(
                           titolo: titolo,
                           volume: volume,
@@ -990,29 +970,20 @@ class _CsvViewerScreenState extends State<CsvViewerScreen> {
                           Provenienza: provenienza,
                           link: link,
                         );
-                        print('Dopo di _handleOpenPdfAction titolo: $titolo');
-                        print('Dopo di _handleOpenPdfAction numPag: $numPag');
-                        print('Dopo di _handleOpenPdfAction link: $link');
-                        //dialogTitleText =
-                        //'Brano Selezionato:\n'
-                        //    '$titolo\n' // <-- USA currentTitolo
-                        //    '$link\n\n'
-                        //    'Imposta il percorso base dei PDF:';
                       },
                     ),
-                  if (!kIsWeb)
-                    IconButton(
-                      // Icona per l'azione Configura Path per File (_askForBasePath) con file contenuto nei campi titolo, volume, numPag
-                      icon: const Icon(Icons.settings_outlined),
-                      tooltip: 'Configura Path PDF',
-                      onPressed: () { // <<< AGGIUNTA FUNZIONE ANONIMA
-                        _askForBasePath(
-                          currentTitolo: titolo, // Assicurati che i nomi dei parametri corrispondano
-                          currentVolume: volume, // alla definizione di _askForBasePath
-                          currentNumPag: numPag,
-                        );
-                      },
-                    ),
+                    if (!kIsWeb)
+                      IconButton(
+                        icon: const Icon(Icons.settings_outlined),
+                        tooltip: 'Configura Path PDF',
+                        onPressed: () { // <<< AGGIUNTA FUNZIONE ANONIMA
+                          _askForBasePath(
+                            currentTitolo: titolo, // Assicurati che i nomi dei parametri corrispondano
+                            currentVolume: volume, // alla definizione di _askForBasePath
+                            currentNumPag: numPag,
+                          );
+                        },
+                      ),
 
                 ],
 
@@ -1021,9 +992,8 @@ class _CsvViewerScreenState extends State<CsvViewerScreen> {
           );
           //FINE Versione 2: Con SingleChildScrollView che avvolge l'intera Row per la gestione della CARD
 
-        },
+         },
       ),
-
       floatingActionButton: _csvData.isEmpty ? null : FloatingActionButton.extended( // Nascondi se non ci sono dati
         onPressed: _pickAndLoadCsv,
         tooltip: 'Carica nuovo file CSV',
@@ -1031,8 +1001,6 @@ class _CsvViewerScreenState extends State<CsvViewerScreen> {
         label: const Text("Nuovo CSV"),
       ),
     );
-    //print("Fine caricamento Lista Brani");
   }
-// print("Fine caricamento Lista Brani");
 }
 
