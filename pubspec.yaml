@@ -31,7 +31,9 @@ dependencies:
   flutter:
     sdk: flutter
   cupertino_icons: ^1.0.6
+  # Database SQLite
   sqflite: ^2.3.0
+  # Per ottenere i percorsi delle directory
   path_provider: ^2.1.1
   path: ^1.8.3
   file_picker: ^10.3.3 # Considera di controllare su pub.dev se ci sono versioni più recenti

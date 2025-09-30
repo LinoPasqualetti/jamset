@@ -1,39 +1,121 @@
-// All'interno del tuo widget Autocomplete
-optionsBuilder: (TextEditingValue textEditingValue) {
-// ... la tua logica optionsBuilder ...
-// Esempio per assicurarsi che non sia vuoto e mostri qualcosa durante il test:
-if (textEditingValue.text.isEmpty) {
-return _opzioniProvenienza; // Mostra tutte le opzioni per il test
-}
-return _opzioniProvenienza.where((String option) {
-return option.toLowerCase().contains(textEditingValue.text.toLowerCase());
-});
-},
-onSelected: (String selection) {
-_cercaProvenienzaController.text = selection; // Aggiorna il TUO controller
-debugPrint('[AUTOCOMPLETE onSelected] Selezione: "$selection", Controller ora: "${_cercaProvenienzaController.text}"');
-},
-fieldViewBuilder: (BuildContext context,
-TextEditingController fieldTextEditingController, // Controller INTERNO di Autocomplete
-FocusNode fieldFocusNode,
-VoidCallback onFieldSubmitted) {
-debugPrint('[FIELDVIEWBUILDER] Costruendo TextField. Testo attuale in _cercaProvenienzaController: "${_cercaProvenienzaController.text}"');
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart'; // Se usata
+import 'dart:io' show Platform; // Per rilevamento OS e percorsi
+import 'package:flutter/foundation.dart' show kIsWeb; // Per rilevamento OS
+import 'package:sqflite_common_ffi/sqflite_ffi.dart'; // Importa questo
+import 'database/database_helper.dart';
+import 'screens/main_screen.dart'; // O la tua schermata principale effettiva
+// import 'screens/csv_viewer_screen.dart'; // Se diversa da MainScreen e la usi
 
-// LA RIGA PIÙ IMPORTANTE:
-// Assicurati che il TextField usi IL TUO _cercaProvenienzaController
-return TextField(
-controller: _cercaProvenienzaController, // <--- USA IL TUO CONTROLLER QUI (_cercaProvenienzaController)
-focusNode: fieldFocusNode,
-decoration: const InputDecoration(
-labelText: 'Archivio', // O 'Provenienza'
-border: OutlineInputBorder(),
-isDense: true,
-),
-onChanged: (text) {
-// Questo onChanged è sul TextField che USA _cercaProvenienzaController.
-// Quindi, _cercaProvenienzaController.text dovrebbe essere uguale a 'text' qui.
-debugPrint('[FIELDVIEWBUILDER onChanged] Testo digitato: "$text". Testo in _cercaProvenienzaController: "${_cercaProvenienzaController.text}"');
-},
-);
-},
-optionsViewBuilder: // ... la tua logica optionsViewBuilder ...
+Map<String, String> appSystemConfig = {};
+
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  // --- INIZIALIZZAZIONE SQFLITE FFI PER DESKTOP ---
+  if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+    // Inizializza la factory per FFI
+    sqfliteFfiInit();
+    // Imposta la database factory globale per usare l'implementazione FFI
+    databaseFactory = databaseFactoryFfi;
+  }
+  // --- FINE INIZIALIZZAZIONE SQFLITE FFI ---
+  // --- Logica di Rilevamento Piattaforma (dal tuo vecchio main) ---
+  String platformTypeForInfo;
+  String osDetailsForInfo = "";
+  if (kIsWeb) {
+    platformTypeForInfo = "Web";
+    osDetailsForInfo = "Esecuzione in un browser web.";
+  } else {
+    platformTypeForInfo = "Nativa";
+    try {
+      if (Platform.isAndroid) {
+        osDetailsForInfo = "Sistema Operativo: Android";
+      } else if (Platform.isIOS) {
+        osDetailsForInfo = "Sistema Operativo: iOS";
+      } else if (Platform.isWindows) {
+        osDetailsForInfo = "Sistema Operativo: Windows";
+      } else if (Platform.isLinux) {
+        osDetailsForInfo = "Sistema Operativo: Linux";
+      } else if (Platform.isMacOS) {
+        osDetailsForInfo = "Sistema Operativo: macOS";
+      } else {
+        osDetailsForInfo = "Sistema Operativo: Sconosciuto (Nativo)";
+      }
+    } catch (e) {
+      osDetailsForInfo = "Errore nel rilevare OS nativo: $e";
+    }
+  }
+  print("===== INFORMAZIONI PIATTAFORMA APP (main.dart) =====");
+  print("Tipo di Piattaforma: $platformTypeForInfo");
+  print(osDetailsForInfo);
+  print("===================================================");
+  // --- Fine Logica Rilevamento Piattaforma ---
+
+
+  try {
+    await DatabaseHelper.instance.database;
+    appSystemConfig = await DatabaseHelper.instance.getAllSystemData();
+
+    print("--- Dati di Sistema Caricati in main() ---");
+    appSystemConfig.forEach((key, value) {
+      print("$key: $value");
+    });
+    print("---------------------------------------");
+
+  } catch (e) {
+    print("Errore durante l'inizializzazione del database o il caricamento dei dati di sistema: $e");
+    // Considera di mostrare un errore all'utente o usare valori di fallback
+    // In questo esempio, appSystemConfig potrebbe rimanere vuota o parziale
+    // Potresti voler popolare appSystemConfig con valori di default hardcodati qui
+    // se il caricamento dal DB fallisce, per garantire che l'app possa comunque partire.
+    // Esempio di fallback (molto basico):
+    if (appSystemConfig.isEmpty) {
+      print("Caricamento da DB fallito. Uso valori di fallback per appSystemConfig.");
+      appSystemConfig['appName'] = 'JamSet App (Fallback)';
+      if (Platform.isWindows) {
+        appSystemConfig['basePdfPath'] = r'C:\DefaultJamsetPDF\';
+      } else if (Platform.isAndroid) {
+        appSystemConfig['basePdfPath'] = '/storage/emulated/0/Documents/DefaultJamsetPDF/';
+      }
+      // ... altri fallback necessari
+    }
+  }
+
+  runApp(const MyApp());
+}
+
+class MyApp extends StatelessWidget {
+  const MyApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    String appNameFromDb = appSystemConfig['appName'] ?? 'App Spartiti (Default)';
+
+    // Potresti voler recuperare il percorso PDF corretto qui basandoti sulla piattaforma
+    // e passarlo alla tua schermata home se necessario.
+    // Esempio:
+    // String currentPlatformPdfPath = "";
+    // if (kIsWeb) {
+    //   currentPlatformPdfPath = appSystemConfig['basePdfPathWeb'] ?? "/web/pdf/";
+    // } else if (Platform.isWindows) {
+    //   currentPlatformPdfPath = appSystemConfig['basePdfPathWindows'] ?? r"C:\JamsetPDF\";
+    // } else if (Platform.isAndroid) {
+    //   currentPlatformPdfPath = appSystemConfig['basePdfPathAndroid'] ?? "/storage/emulated/0/Download/JamsetPDF/";
+    // } // etc.
+
+
+    return MaterialApp(
+      title: appNameFromDb,
+      // title: 'JamSet App',
+      theme: ThemeData(
+        // Il tuo tema personalizzato dal vecchio main.dart
+        primarySwatch: Colors.blueGrey,
+        // ... altre tue configurazioni del tema
+      ),
+      home: const MainScreen(), // O la tua schermata home effettiva
+      // Se MainScreen necessita di config:
+      // home: MainScreen(config: appSystemConfig, defaultPdfPath: currentPlatformPdfPath),
+    );
+  }
+}
+

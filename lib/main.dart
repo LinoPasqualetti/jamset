@@ -5,11 +5,13 @@ import 'package:flutter/services.dart';
 import 'package:jamset/screens/main_screen.dart';
 import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart' show kIsWeb;
-
+import 'database/database_helper.dart'; // Importa il tuo helper
+import 'screens/csv_viewer_screen.dart';
+Map<String, String> appSystemConfig = {};
 void main() {
   // Rilevamento piattaforma
   String platformType;
- // platform
+  // platform
 
   String osDetails = "";  if (kIsWeb) {
     platformType = "Web";

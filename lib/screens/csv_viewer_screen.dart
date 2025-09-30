@@ -26,8 +26,10 @@ class _CsvViewerScreenState extends State<CsvViewerScreen> {
   final TextEditingController _cercaTitoloController = TextEditingController();
   final TextEditingController _cercaAutoreController = TextEditingController();
   final TextEditingController _cercaProvenienzaController = TextEditingController(); // <--- Dichiarazione
-
-  List<List<dynamic>> _csvData = [];
+final TextEditingController _cercaVolumeController = TextEditingController();
+final TextEditingController _cercaTipoMultiController = TextEditingController();
+final TextEditingController _cercaStrumentoController = TextEditingController();
+List<List<dynamic>> _csvData = [];
   List<List<dynamic>> _filteredCsvData = [];
   // Rimuovi o rinomina il vecchio _searchController se non serve più per una ricerca generica
 
@@ -35,12 +37,16 @@ class _CsvViewerScreenState extends State<CsvViewerScreen> {
   String _queryTitolo = '';
   String _queryAutore = '';
   String _queryProvenienza = ''; // <--- Dichiarazione
+  String _queryVolume = '';
+  String _queryTipoMulti = '';
+  String _queryStrumento = '';
+ String Laricerca ='';
   final List<String> _opzioniProvenienza = [ // <--- Dichiarazione
     'Aebers',
     'Bigband',
     'Griglie',
-    'Hal leon',
-    'Nian',
+    'Hal Leonard',
+    'BiaB',
     'Realbook',
     'Soli',
   ];
@@ -54,6 +60,16 @@ class _CsvViewerScreenState extends State<CsvViewerScreen> {
     'Sib',
     'Mid',
     'Mp3',
+  ];
+
+
+
+  final List<String> _opzioniStrumento = [ // <--- DICHIARAZIONE E INIZIALIZZAZIONE
+    'C',
+    'Bb',
+    'Eb',
+    'BAS', // Assumo sia per 'Basso'
+    // Aggiungi altre tonalità/strumenti se necessario (es. 'F' per corno francese, ecc.)
   ];
 
 //  final TextEditingController _searchController = TextEditingController();
@@ -75,8 +91,6 @@ class _CsvViewerScreenState extends State<CsvViewerScreen> {
   @override
   void initState() {
     super.initState();
-    // ... inizializzazione degli altri controller ...
-    // _cercaProvenienzaController = TextEditingController();
   }
 //  @override
   void dispose() {
@@ -84,6 +98,9 @@ class _CsvViewerScreenState extends State<CsvViewerScreen> {
     _cercaTitoloController.dispose();
     _cercaAutoreController.dispose();
     _cercaProvenienzaController.dispose();
+    _cercaVolumeController.dispose();
+    _cercaTipoMultiController.dispose();
+    _cercaStrumentoController.dispose();
     super.dispose();
   }
 
@@ -372,67 +389,90 @@ class _CsvViewerScreenState extends State<CsvViewerScreen> {
     }
   }
   /// Filtro del CSV (o del ResultSetVecchia versione con un campo
- //void _filterData() {
- //   final query = _searchController.text.toLowerCase();
-  //setState(() {
- //     if (query.isEmpty) {
- //       _filteredCsvData = _csvData;
- //     } else {
- //       _filteredCsvData = _csvData.where((row) {
- //         final titolo = row.length > 3 ? row[3].toString().toLowerCase() : '';
- //         final autore = row.length > 4 ? row[4].toString().toLowerCase() : '';
- //         return titolo.contains(query) || autore.contains(query);
- //       }).toList();
- //     }
- //   });
- // }
-// All'interno della classe _CsvViewerScreenState
-
-// Assicurati che queste costanti (chiavi delle colonne) siano definite correttamente
-// static const String keyTitolo = 'Titolo';
-// static const String keyAutore = 'Autore';
 
   void _filterData() {
-    // Le query _queryTitolo e _queryAutore sono già state aggiornate
+    // Le query _queryTitolo, _queryAutore, e _queryProvenienza sono già state aggiornate
     // e convertite in minuscolo dal onPressed del bottone "Filtra".
 
     setState(() {
-      // Se entrambi i campi di ricerca sono vuoti, mostra tutti i dati
-      if (_queryTitolo.isEmpty && _queryAutore.isEmpty) {
+      // Se TUTTI i campi di ricerca sono vuoti, mostra tutti i dati
+      if (_queryTitolo.isEmpty && _queryAutore.isEmpty && _queryProvenienza.isEmpty
+          && _queryVolume.isEmpty && _queryTipoMulti.isEmpty && _queryStrumento.isEmpty) { // <--- AGGIUNTO _queryProvenienza
         _filteredCsvData = List.from(_csvData);
       } else {
-        _filteredCsvData = _csvData.where((row) {
+        _filteredCsvData = _csvData.where((row) { // Assicurati che _csvData sia la lista completa non filtrata
           // Estrai i valori dalla riga usando le chiavi
-          final String titoloInRow = _getValueFromRow(
-            row,
-            keyTitolo,
-            defaultValue: '',
-          ).toLowerCase();
-
-          final String autoreInRow = _getValueFromRow(
-            row,
-            keyAutore,
-            defaultValue: '',
-          ).toLowerCase();
+          // --- INIZIO LOGICA Titolo ---
+          final String titoloInRow = _getValueFromRow( row,keyTitolo,defaultValue: '',).toLowerCase();
+          // --- INIZIO LOGICA VOLUME ---
+          final String volumeInRow = _getValueFromRow( row,keyVolume,defaultValue: '',).toLowerCase();
+          // --- INIZIO LOGICA TIPO MULTI
+          final String tipoMultiInRow = _getValueFromRow( row,keyTipoMulti,defaultValue: '',).toLowerCase();
+          // --- INIZIO LOGICA STRUMENTO ---
+          final String strumentoInRow = _getValueFromRow( row,keyStrumento,defaultValue: '',).toLowerCase();
+          // --- INIZIO LOGICA AUTORE
+          final String autoreInRow = _getValueFromRow( row,keyAutore,defaultValue: '',).toLowerCase();
+          // --- INIZIO LOGICA PROVENIENZA ---
+          final String provenienzaInRow = _getValueFromRow( row,keyArchivioProvenienza,defaultValue: '',).toLowerCase();
 
           // Logica di filtro:
-          bool corrispondeTitolo = true; // Assume vero se il campo di ricerca titolo è vuoto
+          bool corrispondeTitolo = true;
           if (_queryTitolo.isNotEmpty) {
             corrispondeTitolo = titoloInRow.contains(_queryTitolo);
           }
 
-          bool corrispondeAutore = true; // Assume vero se il campo di ricerca autore è vuoto
+          bool corrispondeAutore = true;
           if (_queryAutore.isNotEmpty) {
             corrispondeAutore = autoreInRow.contains(_queryAutore);
           }
 
-          // La riga deve corrispondere a entrambi i criteri di ricerca (se specificati)
-          return corrispondeTitolo && corrispondeAutore;
+          // --- INIZIO CONFRONTO PROVENIENZA ---
+          bool corrispondeProvenienza = true; // Assume vero se il campo di ricerca provenienza è vuoto
+          if (_queryProvenienza.isNotEmpty) {
+            corrispondeProvenienza = provenienzaInRow.contains(_queryProvenienza);
+          }
+          // --- FINE CONFRONTO PROVENIENZA ---
+          // --- INIZIO CONFRONTO VOLUME ---
+          bool corrispondeVolume = true; // Assume vero se il campo di ricerca volume è vuoto
+          if (_queryVolume.isNotEmpty) {
+             corrispondeVolume = volumeInRow.contains(_queryVolume);
+          }
+          // --- FINE CONFRONTO VOLUME ---
+          // --- INIZIO CONFRONTO TIPO MULTI ---
+          bool corrispondeTipoMulti = true; // Assume vero se il campo di ricerca tipo multi è vuoto
+          if (_queryTipoMulti.isNotEmpty) {
+             corrispondeTipoMulti = tipoMultiInRow.contains(_queryTipoMulti);
+          }
+          // --- FINE CONFRONTO TIPO MULTI ---
+         //--- INIZIO CONFRONTO STRUMENTO ---
+          bool corrispondeStrumento = true; // Assume vero se il campo di ricerca strumento è vuoto
+          if (_queryStrumento.isNotEmpty) {
+             corrispondeStrumento = strumentoInRow.contains(_queryStrumento);
+          }
+          // --- FINE CONFRONTO STRUMENTO ---
 
+          //debugPrint('Match Titolo: $corrispondeTitolo, Match Autore: $corrispondeAutore, Match Provenienza: $corrispondeProvenienza');
+          //debugPrint('--------------------');
+
+          // La riga deve corrispondere a TUTTI i criteri di ricerca specificati
+          //return corrispondeTitolo && corrispondeAutore && corrispondeProvenienza; // <--- AGGIUNTO corrispondeProvenienza
+          return corrispondeTitolo &&
+              corrispondeAutore &&
+              corrispondeProvenienza &&
+              corrispondeVolume &&    // <--- AGGIUNTO
+              corrispondeTipoMulti && // <--- AGGIUNTO
+              corrispondeStrumento;  // <--- AGGIUNTO
         }).toList();
       }
     });
+
+    // Opzionale: scrolla la lista all'inizio dopo aver filtrato, se hai molti elementi
+    // if (_scrollController.hasClients) {
+    // _scrollController.jumpTo(0.0);
+    // }
   }
+
+
 
 
     // Opzionale: scrolla la lista all'inizio dopo aver filtrato, se hai molti elementi
@@ -446,6 +486,8 @@ class _CsvViewerScreenState extends State<CsvViewerScreen> {
   void _handleOpenPdfAction({
     required String titolo,
     required String volume,
+    required String PercRadice,
+    required String PercResto,
     required String NumPag,
     required String NumOrig,
     required String idBra,
@@ -464,6 +506,8 @@ class _CsvViewerScreenState extends State<CsvViewerScreen> {
     ///ESTRAE I Dati Selezionati
     String SelTitolo = titolo;
     String SelVolume = volume;
+    String SelPercRadice = PercRadice;
+    String SelPercResto = PercResto;
     String SelNumPag = NumPag;
     String SelNumOrig = NumOrig;
     String SelLink = link;
@@ -547,36 +591,7 @@ class _CsvViewerScreenState extends State<CsvViewerScreen> {
 
     // fino a qui
     // TODO: Implementare l'apertura effettiva del PDF con un package come `open_file` o `url_launcher` (per link)
-    // Esempio con open_file (necessita del package aggiunto a pubspec.yaml):
-    // if (!kIsWeb && File(finalPath).existsSync()) {
-    //   try {
-    //     await OpenFile.open(finalPath);
-    //     // Se il tuo lettore PDF supporta l'apertura a una pagina specifica tramite argomenti,
-    //     // dovresti investigare come fare con OpenFile o un altro package.
-    //     // Per `url_launcher` su desktop potrebbe essere possibile con alcuni schemi URI.
-    //   } catch (e) {
-    //     ScaffoldMessenger.of(context).showSnackBar(
-    //       SnackBar(content: Text('Errore apertura PDF: $e')),
-    //     );
-    //   }
-    // } else if (kIsWeb) {
-    //   // Per il web, se hai un link diretto nella colonna 10 del CSV:
-    //   // if (link.isNotEmpty && Uri.tryParse(link)?.hasAbsolutePath == true) {
-    //   //   await launchUrl(Uri.parse(link));
-    //   // } else {
-    //   //   ScaffoldMessenger.of(context).showSnackBar(
-    //   //     const SnackBar(content: Text('Link non valido o PDF non disponibile per il web.')),
-    //   //   );
-    //   // }
-    // }
-    // else {
-    //   ScaffoldMessenger.of(context).showSnackBar(
-    //     SnackBar(content: Text('PDF non trovato al percorso: $finalPath')),
-    //   );
-    // }
-    ///// per estrarre i dati da link
 
-    ///// fine per estrarre i dati da Link
 
 
     ScaffoldMessenger.of(context).showSnackBar(
@@ -589,8 +604,8 @@ class _CsvViewerScreenState extends State<CsvViewerScreen> {
 // Titolo ( da ewsporre ) Volume (da esporre) NumPag (da potere variara) Percorso (da modificare) Valore iniziale =
     Prova2 =SelPercorso + nomeFile;
     SelBasePdfPath = r'c:\Fantasia\';
-    print('Campo composto da SelPercorso + nomeFile:   $Prova2');
-    print ('Directory da variare:  $SelBasePdfPath');
+    print('Campo composto da SelPercorso + nomeFile:   $SelPercRadice$SelPercResto$nomeFile');
+    print ('Directory da variare:  $SelPercRadice');
     print('TitoloBrano: $SelTitolo');
     print('Strumento contiene $SelStrumento');
     print('Volume $SelVolume');
@@ -614,12 +629,12 @@ class _CsvViewerScreenState extends State<CsvViewerScreen> {
                   SelectableText(SelTitolo.isNotEmpty ? SelTitolo : "N/D"),
                   const SizedBox(height: 8),
 
-                  const Text("Cartella SelPercorso:"), // Etichetta
-                  SelectableText(SelPercorso.isNotEmpty ? SelPercorso : "N/D"),
+                  const Text("Percorso Radice:"), // Etichetta
+                  SelectableText(SelPercRadice.isNotEmpty  ? SelPercRadice : "N/D"),
                   const SizedBox(height: 8),
 
                   const Text("Percorso Finale:"), // Etichetta
-                  SelectableText(SelPercorso.isNotEmpty ? SelPercorso : "N/D"),
+                  SelectableText(SelPercResto.isNotEmpty ? SelPercResto : "N/D"),
                   const SizedBox(height: 8),
 
                   const Text("Nome del File: nomeFile"), // Etichetta
@@ -644,7 +659,7 @@ class _CsvViewerScreenState extends State<CsvViewerScreen> {
                       // Se vuoi ancora usare Prova2 nell'hintText, va bene, ma
                       // l'hintText appare solo se il campo è vuoto.
                       // Il testo effettivo nel campo sarà quello di Prova2 grazie al controller.
-                      hintText: 'Nome del PDF Proposto (inizialmente: $Prova2)',
+                      hintText: 'Nome del PDF Proposto (inizialmente: $SelPercRadice + $SelPercResto + $nomeFile)',
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(30),
                         borderSide: BorderSide.none,
@@ -682,6 +697,7 @@ class _CsvViewerScreenState extends State<CsvViewerScreen> {
 ////%%%%%%%%%%%%%%%%%%%%%%%%%% CARTELLA SU TCL NXTPaper (non ha una scheda e dunque questo è il percorso)
                   print('Bottone "Visualizza PDF" premuto. Percorso PDF da usare: $percorsoPdfDaAprire');
                   print('Pagina da aprire: $SelNumPag');
+// TODO: Implementare una funzione che verifichi l'esistenza del File &PercorsoPdfDaAprire prima dell'apertura effettiva
 /// Inizia qui la chiamata a visualizza WEB un if per verifica con if (kIsWeb) {
 
                   Uri fileUri;
@@ -719,6 +735,9 @@ class _CsvViewerScreenState extends State<CsvViewerScreen> {
                     }
                   }
                   final OpenResult result
+                ////////////////////////////////////////////////////////////////////////////////
+                ////////////// CHIAMATA A OpenFilex per aprire il PDF o anche altri Files //////
+                ////////////////////////////////////////////////////////////////////////////////
                   = await OpenFilex.open(percorsoPdfDaAprire);
 
                   if (result.type != ResultType.done) {
@@ -765,7 +784,9 @@ class _CsvViewerScreenState extends State<CsvViewerScreen> {
   Future<void> _askForBasePath({
     String? currentTitolo,   // Parametro per il titolo del brano
     String? currentVolume,   // Parametro per il volume
-    String? currentNumPag,    // Parametro per il numero di pagina
+    String? currentNumPag,
+    String? currentPercRadice,// Parametro per la cartella radice dei file PDF
+    String? currentPercResto, // Parametro per il resto della cartella dei file PDF// il numero di pagina
   }) async {
     if (kIsWeb) return;
 
@@ -894,154 +915,214 @@ class _CsvViewerScreenState extends State<CsvViewerScreen> {
 
       Scaffold(
       appBar: AppBar(
-        title: const Text('Spartiti Visualizzatore'),
+        title:  Text('Spartiti Visualizzatore $Laricerca'),
         bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(100.0), // Potrebbe essere sufficiente, da aggiustare
+          preferredSize: const Size.fromHeight(150.0), // Potrebbe essere sufficiente, da aggiustare
+
+          // preferredSize: const Size.fromHeight(170.0), // Aggiusta!
           child: Padding(
             padding: const EdgeInsets.all(8.0),
             child: Column(
               mainAxisSize: MainAxisSize.min,
-// Non impostare crossAxisAlignment: CrossAxisAlignment.stretch qui se vuoi che il bottone sia centrato con la sua larghezza naturale
               children: <Widget>[
+                // --- PRIMA RIGA DI FILTRI ---
                 Row(
-                    crossAxisAlignment: CrossAxisAlignment.start, // Allinea i campi in alto se hanno altezze diverse
-                    children: <Widget>[
-                      /// Expander per CercaTitolo
-                      Expanded(
-                        child: TextField(
-                          controller: _cercaTitoloController,
-                          decoration: const InputDecoration(
-                            labelText: 'Titolo',
-                            border: OutlineInputBorder(),
-                            isDense: true,
-                          ),
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    // Filtro Titolo (Expanded)
+                    Expanded(
+                      child: TextField(
+                        controller: _cercaTitoloController,
+                        decoration: const InputDecoration(
+                          labelText: 'Titolo',
+                          border: OutlineInputBorder(),
+                          isDense: true,),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    // Filtro Autore (Expanded)
+                    Expanded(
+                      child: TextField(
+                        controller: _cercaAutoreController,
+                        decoration: const InputDecoration(
+                          labelText: 'Autore',
+                          border: OutlineInputBorder(),
+                          isDense: true,
                         ),
                       ),
-                      const SizedBox(width: 8),
-                      /// Expander per CercaAutore
-                      Expanded(
-                        child: TextField(
-                          controller: _cercaAutoreController,
-                          decoration: const InputDecoration(
-                            labelText: 'Autore',
-                            border: OutlineInputBorder(),
-                            isDense: true,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      /// Expander per CercaArchivioProvenienza
-                      Expanded(
-                        child: Autocomplete<String>(
- // controller: _cercaProvenienzaController, // <--- ERRORE QU
-// ...
-                          optionsBuilder: (TextEditingValue textEditingValue) {
-// ... la tua logica optionsBuilder ...
-// Esempio per assicurarsi che non sia vuoto e mostri qualcosa durante il test:
-                            if (textEditingValue.text.isEmpty) {
-                              return _opzioniProvenienza; // Mostra tutte le opzioni per il test
-                            }
-                            return _opzioniProvenienza.where((String option) {
+                    ),
+                    const SizedBox(width: 8),
+                    // Filtro Archivio/Provenienza (Expanded)
+                    // ...
+                    Expanded(
+                      child: Autocomplete<String>( // NESSUN 'controller:' QUI
+                        optionsBuilder: (TextEditingValue textEditingValue) {
+                          if (textEditingValue.text.isEmpty) {
+                            // Se vuoi mostrare tutte le opzioni quando il campo è vuoto:
+                            return _opzioniProvenienza;
+                            // Se NON vuoi mostrare nulla quando il campo è vuoto:
+                            // return const <String>[]; // Restituisce un iterabile vuoto
+                          } else {
+                            // Filtra le opzioni se c'è del testo
+                            final Iterable<String> filteredOptions = _opzioniProvenienza.where((String option) {
                               return option.toLowerCase().contains(textEditingValue.text.toLowerCase());
                             });
-                          },
-                          onSelected: (String selection) {
-                            _cercaProvenienzaController.text = selection; // Aggiorna il TUO controller
-                            debugPrint('[AUTOCOMPLETE onSelected] Selezione: "$selection", Controller ora: "${_cercaProvenienzaController.text}"');
-                          },
-                          fieldViewBuilder: (BuildContext context,
-                              TextEditingController fieldTextEditingController, // Controller INTERNO di Autocomplete
-                              FocusNode fieldFocusNode,
-                              VoidCallback onFieldSubmitted) {
-                            debugPrint('[FIELDVIEWBUILDER] Costruendo TextField. Testo attuale in _cercaProvenienzaController: "${_cercaProvenienzaController.text}"');
+                            return filteredOptions;
+                          }
+                          // NON CI DOVREBBE ESSERE ALTRO CODICE QUI che possa essere raggiunto.
+                          // L'if/else sopra copre tutti i casi.
+                        },
+                        onSelected: (String selection) {
+                          _cercaProvenienzaController.text = selection;
+                        },
+                        fieldViewBuilder: (BuildContext context,
+                            TextEditingController fieldTextEditingController, // Controller INTERNO
+                            FocusNode fieldFocusNode,
+                            VoidCallback onFieldSubmitted) {
+                          return TextField(
+                            controller: _cercaProvenienzaController, // <--- Il tuo controller di stato
+                            focusNode: fieldFocusNode,
+// --- INIZIO DECORAZIONE DA AGGIUNGERE ---
+                            decoration: const InputDecoration(
+                              labelText: 'Provenienza (Aeber,Realbook)', // O 'Provenienza', come preferisci
+                              border: OutlineInputBorder(),
+                              isDense: true,
+                            ),
+// --- FINE DECORAZIONE DA AGGIUNGERE ---
+// onChanged: (text) {
+//   // Se necessario, puoi gestire onChanged qui, ad esempio per aggiornare
+//   // dinamicamente le opzioni o altro stato.
+// },
+                          );
+                        },
+                        // ...
+                      ),
+                    ),
+                    // ...
 
-// LA RIGA PIÙ IMPORTANTE:
-// Assicurati che il TextField usi IL TUO _cercaProvenienzaController
-                            return TextField(
-                              controller: _cercaProvenienzaController, // <--- USA IL TUO CONTROLLER QUI (_cercaProvenienzaController)
-                              focusNode: fieldFocusNode,
-                              decoration: const InputDecoration(
-                                labelText: 'Archivio', // O 'Provenienza'
-                                border: OutlineInputBorder(),
-                                isDense: true,
-                              ),
-                              onChanged: (text) {
-// Questo onChanged è sul TextField che USA _cercaProvenienzaController.
-// Quindi, _cercaProvenienzaController.text dovrebbe essere uguale a 'text' qui.
-                                debugPrint('[FIELDVIEWBUILDER onChanged] Testo digitato: "$text". Testo in _cercaProvenienzaController: "${_cercaProvenienzaController.text}"');
-                              },
-                            );
-                          },
-                          optionsViewBuilder:
-                          (BuildContext context, AutocompleteOnSelected<String> onSelected, Iterable<String> options) {
-// SE options È VUOTO, POTRESTI VOLER RESTITUIRE UN WIDGET VUOTO PER EVITARE ERRORI DI LAYOUT
-                            if (options.isEmpty) {
-                              return const SizedBox.shrink(); // O un altro widget vuoto appropriato
-                            }
-                            return Align( // <--- ASSICURATI DI AVERE 'return' QUI
-                              alignment: Alignment.topLeft,
-                              child: Material(
-                                elevation: 4.0,
-                                child: ConstrainedBox(
-                                  constraints: BoxConstraints(
-                                    maxHeight: 200,
-// Ajusta la larghezza come necessario, forse basandoti sulla larghezza del campo
-// maxWidth: MediaQuery.of(context).size.width / 3 - 16, // Esempio
-                                  ),
-                                  child: ListView.builder(
-                                    padding: EdgeInsets.zero,
-                                    shrinkWrap: true, // Aggiungi shrinkWrap se ConstrainedBox non ha una larghezza fissa o se la lista è corta
-                                    itemCount: options.length,
-                                    itemBuilder: (BuildContext context, int index) {
-                                      final String option = options.elementAt(index);
-                                      return InkWell(
-                                        onTap: () {
-                                          onSelected(option);
-                                        },
-                                        child: Padding(
-                                          padding: const EdgeInsets.all(16.0), // O un padding più piccolo se isDense è usato
-                                          child: Text(option),
-                                        ),
-                                      );
-                                    },
-                                  ),
-                                ),
-                              ),
-                            );
-                          },
+                  ],
+                ),
+                const SizedBox(height: 8), // Spazio tra le righe di filtri
+
+                // --- SECONDA RIGA DI FILTRI ---
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    // Filtro Volume (Expanded)
+                    Expanded(
+                      child: TextField(
+                        controller: _cercaVolumeController, // Definisci questo controller
+                        decoration: const InputDecoration(
+                          labelText: 'Volume',
+                          border: OutlineInputBorder(),
+                          isDense: true,
                         ),
                       ),
-
-                    ],
-
+                    ),
+                    const SizedBox(width: 8),
+                    // Filtro TipoMulti (Expanded) - Potrebbe essere Autocomplete
+                    Expanded(
+                      child: Autocomplete<String>( // O TextField semplice
+                        optionsBuilder: (TextEditingValue textEditingValue) {
+                          if (textEditingValue.text.isEmpty) return _opzioniTipoMulti;
+                          return _opzioniTipoMulti.where((String option) =>
+                              option.toLowerCase().contains(textEditingValue.text.toLowerCase()));
+                        },
+                        onSelected: (String selection) {
+                          _cercaTipoMultiController.text = selection;
+                        },
+                        fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
+                          // Sincronizza _cercaTipoMultiController con questo controller interno
+                          // La cosa più semplice è assegnare _cercaTipoMultiController al TextField
+                          // e usare il `controller` interno di fieldViewBuilder per popolare `optionsBuilder` se necessario
+                          // o gestire la sincronizzazione in onChanged.
+                          // Per semplicità qui, assumo che tu voglia un TextField semplice
+                          // o che tu gestisca la sincronizzazione per Autocomplete.
+                          // Per Autocomplete, è meglio passare il TUO controller:
+                          return TextField(
+                            controller: _cercaTipoMultiController, // Definisci questo controller
+                            focusNode: focusNode,
+                            decoration: const InputDecoration(
+                              labelText: 'TipoMulti (PDF,MUS,XML...',
+                              border: OutlineInputBorder(),
+                              isDense: true,
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    // Filtro Strumento (Expanded) - Potrebbe essere Autocomplete
+                    Expanded(
+                      child: Autocomplete<String>( // O TextField semplice
+                        optionsBuilder: (TextEditingValue textEditingValue) {
+                          if (textEditingValue.text.isEmpty) return _opzioniStrumento;
+                          return _opzioniStrumento.where((String option) =>
+                              option.toLowerCase().contains(textEditingValue.text.toLowerCase()));
+                        },
+                        onSelected: (String selection) {
+                          _cercaStrumentoController.text = selection;
+                        },
+                        fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
+                          return TextField(
+                            controller: _cercaStrumentoController, // Definisci questo controller
+                            focusNode: focusNode,
+                            decoration: const InputDecoration(
+                              labelText: 'Strumento',
+                              border: OutlineInputBorder(),
+                              isDense: true,
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 12), // Spazio tra la riga dei TextField e il bottone
-                Center( // <--- AVVOLGI IL BOTTONE CON CENTER
+                const SizedBox(height: 12), // Spazio prima del bottone
+                Center(
                   child: ElevatedButton.icon(
-                    icon: const Icon(Icons.search),
+                    icon: const Icon(Icons.search), // Assicurati di avere anche 'icon' e 'label'
                     label: const Text('Filtra'),
-                    onPressed: () {
-                      /// da valore a _cercaProvenienzaController.text
-                       //TextEditingController _cercaProvenienzaController = TextEditingController();
-                       debugPrint('CONTROLLER Provenienza (Originale): "$_cercaProvenienzaController.text"');
-                      //   late TextEditingController _cercaProvenienzaController; // <--- Dichiarazione
+                    onPressed: () {                  // <--- QUESTA PARTE È FONDAMENTALE
+                      // La tua logica per aggiornare le query e chiamare _filterData()
+                   //   String? Laricerca,
                       _queryTitolo = _cercaTitoloController.text.toLowerCase();
                       _queryAutore = _cercaAutoreController.text.toLowerCase();
-                       final String testoOriginaleProvenienza = _cercaProvenienzaController.text;
-                       debugPrint('[FILTRA PREMUTO] Testo Originale Controller Provenienza: "$testoOriginaleProvenienza"');
+                      _queryProvenienza = _cercaProvenienzaController.text.toLowerCase();
+                      _queryVolume = _cercaVolumeController.text.toLowerCase();
+                      _queryTipoMulti = _cercaTipoMultiController.text.toLowerCase();
+                      _queryStrumento = _cercaStrumentoController.text.toLowerCase();
+                      // DEBUG: Stampa i valori delle query PRIMA di chiamare _filterData
+                      if (_queryTitolo.isEmpty && _queryAutore.isEmpty && _queryProvenienza.isEmpty
+                          && _queryVolume.isEmpty && _queryTipoMulti.isEmpty && _queryStrumento.isEmpty)
+                      { // <--- AGGIUNTO _queryProvenienza
+                        print('Nessun filtro  applicato.');
+                                            } else
+                       { Laricerca = "Applicato filtro su:";
+                          if (_queryTitolo.isNotEmpty) {  Laricerca += " Titolo   $_queryTitolo -";};
+                          if (_queryAutore.isNotEmpty) { Laricerca += " Autore   $_queryAutore - ";};
+                          if (_queryProvenienza.isNotEmpty) { Laricerca += " Provenienza $_queryProvenienza - ";};
+                          if (_queryVolume.isNotEmpty) { Laricerca += " Volume $_queryVolume - " ;};
+                          if (_queryTipoMulti.isNotEmpty) { Laricerca += " TipoMulti $_queryTipoMulti - ";};
+                          if (_queryStrumento.isNotEmpty) { Laricerca += " Strumento $_queryStrumento - ";}
+                       }
 
-                       final String testoLowercaseProvenienza = testoOriginaleProvenienza.toLowerCase();
-                       debugPrint('[FILTRA PREMUTO] Testo Lowercase Controller Provenienza: "$testoLowercaseProvenienza"');
-
-                       _queryProvenienza = testoLowercaseProvenienza; // Ora _queryProvenienza dovrebbe avere il valore corretto
-                       debugPrint('[FILTRA PREMUTO] _queryProvenienza IMPOSTATO A: "$_queryProvenienza"');
+                    //  debugPrint('[FILTRA PREMUTO] Query Titolo: "$_queryTitolo"');
+                    //  debugPrint('[FILTRA PREMUTO] Query Autore: "$_queryAutore"');
+                    //  debugPrint('[FILTRA PREMUTO] Query Provenienza: "$_queryProvenienza"');
+                    //  debugPrint('[FILTRA PREMUTO] Query Volume: "$_queryVolume"');
+                    //  debugPrint('[FILTRA PREMUTO] Query TipoMulti: "$_queryTipoMulti"');
+                    //  debugPrint('[FILTRA PREMUTO] Query Strumento: "$_queryStrumento"');
+                    //  Laricerca = 'Tit: $_queryTitolo Aut; $_queryAutore Prov: $_queryProvenienza Vol; $_queryVolume Mult; $_queryTipoMulti Strum: $_queryStrumento';
+                      debugPrint('Ricerca: $Laricerca');
                       _filterData();
-                    },
+                    },                               // <--- Assicurati che la virgola e la parentesi graffa di chiusura ci siano
                   ),
                 ),
               ],
             ),
           ),
+
         ),
       ),
      // body: _csvData.isEmpty
@@ -1074,9 +1155,9 @@ class _CsvViewerScreenState extends State<CsvViewerScreen> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget> [
         Image.asset(
-            'assets/images/SherlockCerca2.png',
-            height: 400,
-            width: 500,
+            'assets/images/SherlockCerca.png',
+            height: 200,
+            width: 200,
             fit: BoxFit.contain ,
             errorBuilder: (context, error, stackTrace) {
               return const Text('Errore caricamento immagine SherlockCerca2');
@@ -1187,6 +1268,8 @@ class _CsvViewerScreenState extends State<CsvViewerScreen> {
                         _handleOpenPdfAction(
                           titolo: titolo,
                           volume: volume,
+                          PercRadice: PercRadice,
+                          PercResto: PercResto,
                           NumPag: numPag,
                           NumOrig: numOrig,
                           idBra: idBra,
@@ -1207,7 +1290,9 @@ class _CsvViewerScreenState extends State<CsvViewerScreen> {
                           currentTitolo: titolo,
                           currentVolume: volume,
                           currentNumPag: numPag,
-                        );
+                          currentPercRadice: PercRadice,
+                          currentPercResto: PercResto,
+                           );
                       },
                     ),
                 ],
