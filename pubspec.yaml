@@ -35,7 +35,7 @@ dependencies:
   sqflite: ^2.3.0
   # Per ottenere i percorsi delle directory
   path_provider: ^2.1.1
-  path: ^1.8.3
+  path: ^1.9.1
   file_picker: ^10.3.3 # Considera di controllare su pub.dev se ci sono versioni più recenti
   syncfusion_flutter_pdfviewer: ^31.1.17 # Considera di controllare su pub.dev se ci sono versioni più recenti
   csv: ^6.0.0

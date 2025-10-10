@@ -62,7 +62,7 @@ class DatabaseHelper {
     // Questi sono solo esempi, adattali alle tue necessità!
     Map<String, String> defaultSystemData = {
       'basePdfPathWindows': r'C:\JamsetPDF\', // Raw string per i backslash
-      'basePdfPathAndroid': '/storage/emulated/0/Download/JamsetPDF/', // Esempio, considera Scoped Storage
+      'basePdfPathAndroid': '/storage/emulated/0/JamsetPDF/', // Esempio, considera Scoped Storage
       'basePdfPathLinux': '/home/user/JamsetPDF/', // Esempio
       'appName': 'JamSet Visualizzatore Spartiti',
       'lastCsvImportPath': '', // Percorso dell'ultimo CSV importato

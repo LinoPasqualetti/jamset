@@ -56,8 +56,14 @@ class MyApp extends StatelessWidget {
       title: 'JamSet App', // O il titolo che preferisci
       theme: ThemeData(
         // Il tuo tema personalizzato, se ne hai uno
-        primarySwatch: Colors.blueGrey, // Esempio
-        // ... altre configurazioni del tema
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: Colors.blueGrey, // Usa il tuo colore principale come "seme"
+
+// Puoi anche sovrascrivere colori specifici se vuoi
+          primary: Colors.blueAccent, // Il colore primario per elementi come bottoni, appbar, ecc.
+          secondary: Colors.amber, // Un colore secondario (esempio)
+// ... e molti altri colori come surface, background, error, etc.
+        ),
       ),
       // LA MODIFICA CHIAVE È QUI:
       // Imposta MainScreen come la prima schermata che l'utente vede

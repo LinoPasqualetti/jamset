@@ -12,6 +12,10 @@ import 'package:open_filex/open_filex.dart'; // Per aprire file
 // Per manipolare i percorsi, aggiungi path: ^X.Y.Z a pubspec.yaml
 // ... altri import
 import 'package:url_launcher/url_launcher.dart'; // NECESSARIO PER url_launcher per aprire file su Browser
+import 'package:jamset/file_path_validator.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:http/http.dart' as http; // Aggiungi questo import per le chiamate HTTP
+import 'package:path/path.dart' as p;
 
 class CsvViewerScreen extends StatefulWidget {
   const CsvViewerScreen({super.key});
@@ -20,27 +24,31 @@ class CsvViewerScreen extends StatefulWidget {
   State<CsvViewerScreen> createState() => _CsvViewerScreenState();
 } // <--- Assicurati che questa parentesi chiuda CsvViewerScreen
 
-class _CsvViewerScreenState extends State<CsvViewerScreen> {
+class _CsvViewerScreenState extends State<CsvViewerScreen>
+{
+  // Chiavi univoche per salvare il percorso radice per ogni piattaforma
+  static const String _windowsBasePathKey = 'base_pdf_path_windows';
+  static const String _mobileBasePathKey = 'base_pdf_path_mobile';
+
+// Questa variabile conterrà il percorso corretto per la piattaforma corrente
+  String? _basePdfPath;
 
   //TextEditingController _searchController = TextEditingController();final TextEditingController _cercaTitoloController = TextEditingController();
   final TextEditingController _cercaTitoloController = TextEditingController();
   final TextEditingController _cercaAutoreController = TextEditingController();
   final TextEditingController _cercaProvenienzaController = TextEditingController(); // <--- Dichiarazione
-final TextEditingController _cercaVolumeController = TextEditingController();
-final TextEditingController _cercaTipoMultiController = TextEditingController();
-final TextEditingController _cercaStrumentoController = TextEditingController();
-List<List<dynamic>> _csvData = [];
+  final TextEditingController _cercaVolumeController = TextEditingController();
+  final TextEditingController _cercaTipoMultiController = TextEditingController();
+  final TextEditingController _cercaStrumentoController = TextEditingController();
+  List<List<dynamic>> _csvData = [];
   List<List<dynamic>> _filteredCsvData = [];
-  // Rimuovi o rinomina il vecchio _searchController se non serve più per una ricerca generica
-
-  // Potresti voler mantenere anche le stringhe di query separate
   String _queryTitolo = '';
   String _queryAutore = '';
   String _queryProvenienza = ''; // <--- Dichiarazione
   String _queryVolume = '';
   String _queryTipoMulti = '';
   String _queryStrumento = '';
- String Laricerca ='';
+  String Laricerca ='';
   final List<String> _opzioniProvenienza = [ // <--- Dichiarazione
     'Aebers',
     'Bigband',
@@ -61,9 +69,6 @@ List<List<dynamic>> _csvData = [];
     'Mid',
     'Mp3',
   ];
-
-
-
   final List<String> _opzioniStrumento = [ // <--- DICHIARAZIONE E INIZIALIZZAZIONE
     'C',
     'Bb',
@@ -71,23 +76,11 @@ List<List<dynamic>> _csvData = [];
     'BAS', // Assumo sia per 'Basso'
     // Aggiungi altre tonalità/strumenti se necessario (es. 'F' per corno francese, ecc.)
   ];
-
-//  final TextEditingController _searchController = TextEditingController();
-  String _basePdfPath = ""; // Variabile per memorizzare il path base dei PDF
+//  String _basePdfPath = ""; // Variabile per memorizzare il path base dei PDF
   // NUOVE VARIABILI PER LA MAPPATURA DINAMICA DELLE COLONNE
   bool _csvHasHeaders = true; // o come la gestisci
   Map<String, int> _columnIndexMap = {};
   List<String> _csvHeaders = []; // Per tenere traccia delle intestazioni effettive
-  // Nomi delle colonne che CERCHI nel CSV (devono corrispondere a quelli nel tuo file)
-  // !! AGGIUNGI O VERIFICA QUESTE RIGHE !!
-  //final bool _csvHasHeaders = true; // Valore predefinito, puoi cambiarlo o impostarlo diversamente
-///Logica per l'attivazione di una ricerca su ARCHIVIO DI PROVENIENZA
-// In _CsvViewerScreenState
-
-// ... altri controller e variabili di stato ...
-  // Per la logica di filtro
-
-
   @override
   void initState() {
     super.initState();
@@ -103,9 +96,690 @@ List<List<dynamic>> _csvData = [];
     _cercaStrumentoController.dispose();
     super.dispose();
   }
+  Future<void> _loadPreferences()
+  async
+  {
+    final prefs = await SharedPreferences.getInstance();
 
-  ///Logica per l'attivazione di una ricerca su ARCHIVIO DI PROVENIENA
-  // INDICI FISSI (usati SE _csvHasHeaders è false)
+    // Scegli quale chiave caricare in base al sistema operativo
+    String keyToLoad;
+    String defaultValue;
+
+    if (Platform.isWindows) {
+      keyToLoad = _windowsBasePathKey;
+      defaultValue = 'C:\\JamsetPDF'; // Fornisci un default sensato per Windows
+    } else if (Platform.isAndroid || Platform.isIOS) {
+      keyToLoad = _mobileBasePathKey;
+      defaultValue = '/storage/emulated/0/JamsetPDF'; // Fornisci un default sensato per Mobile
+    } else {
+      // Gestisci altre piattaforme o imposta un default generico
+      keyToLoad = 'base_pdf_path_generic';
+      defaultValue = '/';
+    }
+
+    // Carica il valore e imposta il default se non esiste
+    setState(() {
+      _basePdfPath = prefs.getString(keyToLoad) ?? defaultValue;
+    });
+
+    print("Preferenze caricate per ${Platform.operatingSystem}. Percorso Radice: $_basePdfPath");
+  }
+  void _handleOpenPdfAction({
+    required String titolo,
+    required String volume,
+    required String NumPag,
+    required String NumOrig,
+    required String idBra,
+    required String TipoMulti,
+    required String TipoDocu,
+    required String strumento,
+    required String Provenienza,
+    required String link, // se hai anche un link diretto dal CSV colonna 10
+    // }) {
+    // dA QUI
+  }) async
+  {
+   // String nomeFileDaVolume = volume.endsWith('.pdf') ? volume : '$volume.pdf';
+    String nomeFileDaVolume = volume;
+    String finalPath = kIsWeb ? "Non applicabile per web" : '$_basePdfPath$nomeFileDaVolume';
+    //i campi sel sono relativi agli elementi della riga selezionata in apri pdf
+    // ;
+    ///ESTRAE I Dati Selezionati
+    String SelTitolo = titolo;
+    String SelVolume = volume;
+    String SelNumPag = NumPag;
+    String SelNumOrig = NumOrig;
+    String SelLink = link;
+    String SelIdBra = idBra;
+    String SelTipoMulti = TipoMulti;
+    String SelTipoDocu = TipoDocu;
+    String SelStrumento = strumento;
+    String SelProvenienza = Provenienza;
+    String SelBasePdfPath = _basePdfPath ?? ''; // Se _basePdfPath è null, usa una stringa vuota
+    String SelfinalPath = finalPath;
+    String Prova2 = 'Vuota';
+    String nomeFile;
+    String nomeFileEstratto = ""; // Variabile per il nome file estratto da SelLink
+    String percorsoDirectoryEstratta = ""; // Variabile per la directory estratta da SelLink
+    String percorsoPdfDaAprireNelDialogo = ""; // Questa sarà la variabile che contiene il path WEB da aprire
+    String SelPercorso = link; // Usa il parametro 'link' passato alla funzione
+    if (SelPercorso.startsWith('#')) {
+      SelPercorso = SelPercorso.substring(1);
+    }
+    if (SelPercorso.endsWith('#')) {
+      SelPercorso = SelPercorso.substring(0, SelPercorso.length - 1);
+    }
+// Ora SelPercorso è, ad esempio, "P:\PDF REAL BOOK\BookC\COLOBK.PDF"
+    int ultimoBackslashIndex = SelPercorso.lastIndexOf(r'\');
+    if (ultimoBackslashIndex != -1) {
+      // Prendi tutto ciò che viene dopo l'ultimo backslash
+      nomeFile = SelPercorso.substring(ultimoBackslashIndex + 1);
+    } else {
+      // Non ci sono backslash, quindi si presume che SelPercorso sia solo il nome del file (con o senza estensione)
+      nomeFile = SelPercorso;
+    }
+    SelPercorso = SelPercorso.substring(0, SelPercorso.length - nomeFile.length);
+    print("InizioAzione Chiama Apertura PDF _handleOpenPdfAction"); // con parametri
+    print("Stringa originale (link): $link");
+    print("Percorso pulito: $SelPercorso");
+    print("Nomefile estratto (CON estensione) campo nomeFile: $nomeFile"); // Dovrebbe essere COLOBK.PDF
+    print('Vediamo cos è SelTitolo $SelTitolo');
+    print('Vediamo cos è SelVolume $SelVolume');
+    print('Vediamo cos è SelNumPag $SelNumPag');
+    print('Vediamo cos è SelNumOrig $SelNumOrig');
+    print('Vediamo cos è SelLink $SelLink');
+    print('Vediamo cos è SelIdBra $SelIdBra');
+    print('Vediamo cos è SelTipoMulti $SelTipoMulti');
+    print('Vediamo cos è SelTipoDocu $SelTipoDocu');
+    print('Vediamo cos è SelStrumento $SelStrumento');
+    print('Vediamo cos è SelProvenienza $SelProvenienza');
+    print('Vediamo cos è SelBasePdfPath $SelBasePdfPath');
+    print('Vediamo cos è FinalPath $finalPath');
+    print('--- Azione Chiama Apertura PDF _handleOpenPdfAction ---');
+    print('Tetolo: $titolo');
+    print('Volume (come nome file?): $nomeFileDaVolume');
+    print('Numero Pagina (da usare con lettore PDF): $NumPag');
+    print('Numero Originale: $NumOrig');
+    print('Path Base Configurato: $_basePdfPath');
+    //print('Path PDF Calcolato (esempio): $finalPath');
+    print('Link diretto da CSV: $link');
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Dati per PDF: Titolo: $titolo, Volume: $volume, Pag: $NumPag. Path base: $_basePdfPath'),
+        //duration: const Duration(seconds: 15),
+      ),
+    );
+//Da qui emettere un nuovo dialogBox o schermo per verificare gli elementi per costruire il giusto nome di FilePd
+// Titolo ( da ewsporre ) Volume (da esporre) NumPag (da potere variara) Percorso (da modificare) Valore iniziale =
+
+    Prova2 =SelPercorso + nomeFile;
+
+   // if (Prova2 == 'Vuota' )
+      // E il caso in cui arriviamo dal menù principale dunque la prima costruzione, poi invece il valore deve essere conservato in rientro dalle verifiche di esistenza
+     //    Prova2 =SelPercorso + nomeFile;
+    //} else {
+    //  print('Rientro dalla validazione nuovo Prova2: $Prova2 '); // Non ci sono backslash, quindi si presume che SelPercorso sia solo il nome del file (con o senza estensione)
+    //    }
+
+
+
+    SelBasePdfPath = r'c:\Fantasia\';
+    print('--Prova2-- Campo composto da SelPercorso + nomeFile:   $Prova2');
+    print ('--SelBasePdfPath--Directory da variare:  $SelBasePdfPath');
+    print('--SelTitolo--TitoloBrano: $SelTitolo');
+    print('--SelStrumento--Strumento contiene: $SelStrumento');
+    print('--SelVolume--Volume: $SelVolume');
+// --- INIZIO NUOVO AlertDialog ---
+    // (Questa è circa la tua riga 213, dopo i print)
+    if (mounted) {
+      // Controller se avevi campi editabili prima, se ora sono solo visualizzabili
+      // e selezionabili, i controller potrebbero non essere necessari per questi specifici campi.
+      // Ma se altri campi sono ancora editabili (come nel mio esempio precedente),
+      // i loro controller rimangono.
+      TextEditingController searchController = TextEditingController(text: Prova2); // <--- INIZIALIZZA QUI
+      await showDialog
+        (
+        context: context,
+        builder: (BuildContext dialogContext)
+////
+
+///
+        {
+          return AlertDialog(
+            title: const Text('Dettagli Brano Selezionato'), // O usa SelectableText anche qui se vuoi
+            content: SingleChildScrollView(
+              child: ListBody(
+                children: <Widget>[
+                  const Text("--SelTitolo--Titolo:") , //
+                  SelectableText(SelTitolo.isNotEmpty ? SelTitolo : "N/D"),
+                  const SizedBox(height: 8),
+
+                  const Text("--SelPercorso--Cartella SelPercorso:"), // Etichetta
+                  SelectableText(SelPercorso.isNotEmpty ? SelPercorso : "N/D"),
+                  const SizedBox(height: 8),
+
+                 // const Text("Percorso Finale:"), // Etichetta
+                 // SelectableText(SelPercorso.isNotEmpty ? SelPercorso : "N/D"),
+                 // const SizedBox(height: 8),
+
+                  const Text("--nomeFile-- Nome del File: "), // Etichetta
+                  SelectableText(nomeFile.isNotEmpty ? nomeFile : "N/D"),
+                  const SizedBox(height: 8),
+
+                  const Text('--nomeFileDaVolume--Altro Nome del File: "'), // Etichetta
+                  SelectableText(nomeFileDaVolume.isNotEmpty ? nomeFileDaVolume : "N/D"),
+                  const SizedBox(height: 8),
+
+                  const Text("--SelNumPag-- Pagina:"), // Etichetta
+                  SelectableText(SelNumPag.isNotEmpty ? SelNumPag : "N/D"),
+                  const SizedBox(height: 8),
+
+
+                  const Text("--SelLink--Link Originale:"), // Etichetta
+                  SelectableText(SelLink.isNotEmpty ? SelLink : "N/A"),
+                  const SizedBox(height: 8),
+                  const Text("--Prova2-- Il percorso da attivare:"), // Etichetta
+                  TextField(
+                    controller: searchController, // _searchController ora contiene il testo di Prova2
+                    decoration: InputDecoration(
+                      // Se vuoi ancora usare Prova2 nell'hintText, va bene, ma
+                      // l'hintText appare solo se il campo è vuoto.
+                      // Il testo effettivo nel campo sarà quello di Prova2 grazie al controller.
+                      hintText: '--Prova2--Nome del PDF Proposto (inizialmente: $Prova2)',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(30),
+                        borderSide: BorderSide.none,
+                      ),
+
+                    ),
+                  ),
+
+
+                ],
+              ),
+
+            ),
+            /////Modifica proposta
+            // ... all'interno del builder del tuo showDialog ...
+            actions: <Widget>[
+              TextButton(
+                child: const Text('Annulla'),
+                onPressed: () {
+                  Navigator.of(dialogContext).pop();
+                },
+              ),
+              ElevatedButton(
+                child: const Text('Visualizza PDF'),
+                onPressed: () async
+                {
+// Il controller 'searchController' è quello che hai già definito nel dialogo.
+                  String percorsoModificato = searchController.text;
+                  print('Visualizza PDF Percorso Modificato: $percorsoModificato');
+                  print('---Prova2-- Campo composto che compare sul da SelPercorso + nomeFile:   $Prova2');
+                  final separatoreRegExp = RegExp(r'[/\\]');
+                  int ultimoSeparatoreIndex = percorsoModificato.lastIndexOf(separatoreRegExp);
+                  String PercorsoPulito;
+                  String directoryBaseFinale;
+                   directoryBaseFinale = '';
+                  int indiceSequenza = Prova2.indexOf(":\\");
+                  int indiceFine = Prova2.indexOf(nomeFileDaVolume);
+                  if (indiceSequenza != -1 && indiceFine != -1) {
+                    // 3. Estrai la sottostringa dall'inizio (indice 0) fino all'indice della sequenza trovata
+                    directoryBaseFinale = Prova2.substring(0, indiceSequenza+1);
+                    PercorsoPulito= Prova2.substring(indiceSequenza+1, indiceFine);
+                  } else {
+                    // Fallback: se la sequenza non esiste, gestisci il caso come preferisci.
+                    // Potresti assegnare un valore di default o l'intera stringa.
+                    directoryBaseFinale = " "; // o Prova2;
+                    PercorsoPulito= Prova2;
+                  }
+/////// elenco dei campi d apassare a _apriFileUniversale
+                  //directoryBaseFinale
+                  //   required String basePathDaDati,   preso da directoryBaseFinale// Es. 'C:' dal CSV/DB
+                  //   required String subPathDaDati,    preso da PercorsoPulito// Es. '\JamsetPDF\Real Books\' dal CSV/DB
+                  //   required String fileNameDaDati,   preso da nomeFileDaVolume // Es. 'mio_file.pdf'
+                  print('----------  Parametri per _apriFileUniversale');
+                  print('A  Percorso dal TextField: $percorsoModificato');
+                  print('A1 Directory Base finale: $directoryBaseFinale');
+                  print('A2 Directory Base dedotta: $PercorsoPulito');
+                  print('A3 Nome File dedotto: $nomeFileDaVolume');
+
+// 3. COSTRUZIONE DEL PERCORSO FINALE IN BASE ALLA PIATTAFORMA
+                  String percorsoDaAprire;
+                  percorsoDaAprire = percorsoModificato;
+                  /// verificare se percorsoModificato viene ricoperto
+                  print('Percorso modificato da aprire: $percorsoModificato');
+// chiamata a _apriFileUniversale per per la costruzione e controllo di esistenza del file indicato
+// con parametri  basePathDati, subPath
+                  // 2. Chiama la funzione universale, fornendo le azioni da compiere
+                  await _apriFileUniversale(
+                    basePathDaDati: directoryBaseFinale,
+                    subPathDaDati: PercorsoPulito,
+                    fileNameDaDati: nomeFileDaVolume,
+
+                    // --- AZIONE IN CASO DI SUCCESSO ---
+                    ///METTERE qui il campo di testo editabile hintText ? forse meglio quando rientra dalla prima diramazione
+                    inCasoDiSuccesso: (percorsoDelFile) {
+                      // 'percorsoDelFile' è la stringa che la tua funzione ha validato
+                      // (es. "C:\JamsetPDF\..." su Windows o "http://.../..." sul web)
+
+                      print("SUCCESSO dalla chiamata! Il file si trova in: $percorsoDelFile");
+                      percorsoDaAprire= percorsoDelFile;
+                      if (mounted) { // Assicurati che il widget sia ancora nell'albero
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('File trovato in: $percorsoDelFile')),
+                        );
+                      }
+                      // Ora puoi usare il percorso per aprire il tuo viewer
+                      // Esempio:
+                      // _apriPdfViewer(percorsoDelFile, paginaDaAprire);
+                    },
+
+                    // --- AZIONE IN CASO DI FALLIMENTO ---
+                    inCasoDiFallimento: (percorsoTentato) {
+                      // 'percorsoTentato' è l'ultimo percorso che la funzione ha provato a usare
+                      percorsoDaAprire= percorsoTentato;
+                      print("FALLIMENTO dalla chiamata! Impossibile trovare il file in: $percorsoTentato");
+
+                      // Mostra un messaggio di errore all'utente
+                      if (mounted) { // Assicurati che il widget sia ancora nell'albero
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('File non trovato in: $percorsoTentato')),
+                        );
+                      }
+                    },
+                  );
+///// mettiamo qui il percorso da aprire che ritorna alla chiamata
+
+// 4. APERTURA EFFETTIVA DEL FILE/URL
+
+                print("Procedura di verifica esistenza. Il percorso da aprire è: $Prova2");
+
+
+// 5. Chiudi il dialogo dopo l'azione
+
+                //Togliere se si vuole uscire dalla dialog
+                //  if(mounted) Navigator.of(dialogContext).pop();
+
+// --- FINE LOGICA ---
+                },
+              ),
+              //// Nuovo bottone di sola verifica esistenza del file (riga 404)
+              ElevatedButton(
+                child: const Text('Verifica di Esistenza'),
+                onPressed: () async
+                {
+// Il controller 'searchController' è quello che hai già definito nel dialogo.
+                  String percorsoModificato = searchController.text;
+                  print('Verifica di Esistenza Percorso Modificato: $percorsoModificato');
+                  print('---Prova2-- Campo composto che compare sul da SelPercorso + nomeFile:   $Prova2');
+                  final separatoreRegExp = RegExp(r'[/\\]');
+                  int ultimoSeparatoreIndex = percorsoModificato.lastIndexOf(separatoreRegExp);
+                  String PercorsoPulito;
+                  String directoryBaseFinale;
+                  directoryBaseFinale = '';
+                  int indiceSequenza = Prova2.indexOf(":\\");
+                  int indiceFine = Prova2.indexOf(nomeFileDaVolume);
+                  if (indiceSequenza != -1 && indiceFine != -1) {
+                    // 3. Estrai la sottostringa dall'inizio (indice 0) fino all'indice della sequenza trovata
+                    directoryBaseFinale = Prova2.substring(0, indiceSequenza+1);
+                    PercorsoPulito= Prova2.substring(indiceSequenza+1, indiceFine);
+                  } else {
+                    // Fallback: se la sequenza non esiste, gestisci il caso come preferisci.
+                    // Potresti assegnare un valore di default o l'intera stringa.
+                    directoryBaseFinale = " "; // o Prova2;
+                    PercorsoPulito= Prova2;
+                  }
+/////// elenco dei campi d apassare a _VerificaFile
+                  //directoryBaseFinale
+                  //   required String basePathDaDati,   preso da directoryBaseFinale// Es. 'C:' dal CSV/DB
+                  //   required String subPathDaDati,    preso da PercorsoPulito// Es. '\JamsetPDF\Real Books\' dal CSV/DB
+                  //   required String fileNameDaDati,   preso da nomeFileDaVolume // Es. 'mio_file.pdf'
+                  print('----------  Parametri per _VerificaFile');
+                  print('A  Percorso dal TextField: $percorsoModificato');
+                  print('A1 Directory Base finale: $directoryBaseFinale');
+                  print('A2 Directory Base dedotta: $PercorsoPulito');
+                  print('A3 Nome File dedotto: $nomeFileDaVolume');
+
+// 3. COSTRUZIONE DEL PERCORSO FINALE IN BASE ALLA PIATTAFORMA
+                  String percorsoDaAprire;
+                  percorsoDaAprire = percorsoModificato;
+                  /// verificare se percorsoModificato viene ricoperto
+                  print('Chiamo VerificaFile: $directoryBaseFinale $PercorsoPulito $nomeFileDaVolume');
+//  Mostra subito un indicatore di caricamento
+                  showDialog(
+                    context: context,
+                    barrierDismissible: false,
+                    builder: (BuildContext loadingContext) {
+                      return const Center(child: CircularProgressIndicator());
+                    },
+                  );
+
+
+                  // chiamata a _VerificaFile per per la costruzione e controllo di esistenza del file indicato
+// con parametri  basePathDati, subPath
+                  // 2. Chiama la funzione _VerificaFile, fornendo le azioni da compiere
+                  print("----------------------------- ");
+                  print(" CHIAMO VerificaFile  file system locale.");
+                  print(" Elementi da verificare: $directoryBaseFinale $PercorsoPulito $nomeFileDaVolume.");
+                  print("----------------------------- ");
+                  await _VerificaFile
+                    (
+                    context: context,
+                    basePathDaDati: directoryBaseFinale,
+                    subPathDaDati: PercorsoPulito,
+                    fileNameDaDati: nomeFileDaVolume,
+
+                    // --- AZIONE IN CASO DI SUCCESSO ---
+                    ///METTERE qui il campo di testo editabile hintText ? forse meglio quando rientra dalla prima diramazione
+                    inCasoDiSuccesso: (percorsoDelFile)
+                    {
+                      if (mounted) Navigator.of(context).pop(); // Chiudi il caricamento
+                      print("SUCCESSO dalla chiamata! Il file si trova in: $percorsoDelFile");
+
+// ---> LOGICA CORRETTA SPOSTATA QUI <---
+                      setState(() { // Usa setState o setStateDialog del tuo dialogo
+                        Prova2 = percorsoDelFile;
+                        searchController.text = percorsoDelFile; // Aggiorna anche il campo di testo!
+                      });
+                      print('Azione DOPO il successo: Prova2 ora è: $Prova2');
+// Qui puoi chiamare la funzione che APRE EFFETTIVAMENTE il file
+// _apriPdfConLauncher(Prova2);
+                    },
+// --- AZIONE IN CASO DI FALLIMENTO ---
+                    inCasoDiFallimento: (percorsoTentato)
+                    {
+                      if (mounted) Navigator.of(context).pop(); // Chiudi il caricamento
+                      print("FALLIMENTO dalla chiamata! Impossibile trovare il file in: $percorsoTentato");
+
+// ---> LOGICA CORRETTA SPOSTATA QUI <---
+                      setState(() { // Usa setState o setStateDialog del tuo dialogo
+                        Prova2 = percorsoTentato;
+                        searchController.text = percorsoTentato; // Aggiorna anche il campo di testo!
+                      });
+                      print('Azione DOPO il fallimento: Prova2 ora è: $Prova2');
+                    },
+                  );
+
+                }, //Fine controllo esistenza
+              ),
+              //// Nuovo bottone di sola verifica esistenza del file
+
+            ],
+
+            /////Modifica proposta
+          );
+        },
+      );
+    }
+
+  }
+////// percorso per la costruzione e controllo di esistenza del file indicato con dati basePathDati, subPathDati, fileNameDati
+  Future<void> _apriFileUniversale({
+    required String basePathDaDati,   // Es. 'C:' dal CSV/DB
+    required String subPathDaDati,    // Es. '\JamsetPDF\Real Books\' dal CSV/DB
+    required String fileNameDaDati,   // Es. 'mio_file.pdf'
+    required Function(String percorsoTrovato) inCasoDiSuccesso,
+    required Function(String percorsoTentato) inCasoDiFallimento,
+
+    //required String PercorsoCompleto, // Es. 'C:\JamsetPDF\Real Books\mio_file.pdf'
+
+  }) async
+  {
+
+    String percorsoFinaleDaAprire;
+    bool risorsaEsiste = false;
+
+    // -----------------------------------------------------------------
+    // FASE 1: GESTIONE PIATTAFORME NATIVE (Windows, Android, etc.)
+    // Trasformazione e verifica di esistenza del percorso in base alla piattaforma.
+    // -----------------------------------------------------------------
+    if (!kIsWeb) {
+      print("Siamo su una piattaforma nativa. Verifico il file system locale.");
+
+      // Qui va la logica di "traduzione" del basePath per la piattaforma corrente
+      String basePathTecnico = basePathDaDati;
+      if (Platform.isAndroid || Platform.isIOS) {
+        // Esempio: Sostituisci il percorso di Windows con quello corretto per Android
+        basePathTecnico = '/storage/emulated/0/JamsetPDF';
+//      basePathTecnico = '/storage/emulated/0/';
+      } else
+      {
+        //// Trattamento Windows o linux/Mac
+      }
+      // Chiama il validatore nativo
+      FilePathResult risultatoNativo = await ValidaPercorso.checkGenericFilePath(
+        basePath: basePathTecnico,
+        subPath: subPathDaDati,
+        fileNameWithExtension: fileNameDaDati,
+      );
+
+      risorsaEsiste = risultatoNativo.isSuccess;
+      percorsoFinaleDaAprire = risultatoNativo.fullPath ?? "";
+
+      // -----------------------------------------------------------------
+      // FASE 2: GESTIONE PIATTAFORMA WEB
+      // -----------------------------------------------------------------
+    } else
+    {
+      print("Siamo su una piattaforma Web. Trasformo il percorso in URL.");
+
+// 1. Definisci l'URL di base del tuo server dove si trovano i PDF.
+//    QUESTO È IL DATO DA CONFIGURARE.
+      //String baseUrlWeb = "http://192.168.1.100/spartiti"; // Esempio con un IP locale
+      //////////IMPORTANTISSIMO LA RADICE CHE VIENE PASSATA AL FILE finale
+      String baseUrlWeb = "file:///P:"; // Esempio con file locale
+
+// 2. RICOSTRUISCI IL PERCORSO RELATIVO COMPLETO
+//    Uniamo il 'subPath' e il 'fileName' per ricreare il percorso relativo come 'Real Books\Hal Leonard...'.
+//    Questo è il passo FONDAMENTALE che mancava.
+      String percorsoRelativoCompleto = '$subPathDaDati$fileNameDaDati';
+      print("Percorso relativo completo dai dati: $percorsoRelativoCompleto");
+
+// 3. PULISCI IL PERCORSO RELATIVO PER RENDERLO UN URL VALIDO
+//    - Sostituisci tutti i backslash '\' con gli slash '/'
+//    - Codifica gli spazi e altri caratteri speciali (FONDAMENTALE!)
+      String percorsoUrlSafe = Uri.encodeFull(percorsoRelativoCompleto.replaceAll(r'\', '/'));
+
+// Rimuoviamo un eventuale slash iniziale per evitare URL doppi come "...spartiti//Real Book..."
+      if (percorsoUrlSafe.startsWith('/')) {
+        percorsoUrlSafe = percorsoUrlSafe.substring(1);
+      }
+      print("Percorso relativo pulito e codificato per URL: $percorsoUrlSafe");
+
+// 4. COSTRUISCI L'URL FINALE
+      /////COMPONE IL PERCORSO FINALE da verificare
+      percorsoFinaleDaAprire = "$baseUrlWeb/$percorsoUrlSafe";
+      /// si potrebbe mettere qui anche il numero pagina se non nullo ma forse ci vuole anhe quel parametro da passare alla funzione
+      ///
+      print("URL finale costruito: $percorsoFinaleDaAprire");
+
+// 5. Verifica l'esistenza della risorsa web (il resto del codice rimane uguale)
+      try {
+        final response = await http.head(Uri.parse(percorsoFinaleDaAprire));
+        if (response.statusCode == 200) {
+          risorsaEsiste = true;
+          print("SUCCESSO: La risorsa web esiste.");
+        } else {
+          risorsaEsiste = false;
+          print("ERRORE: La risorsa web ha restituito lo stato ${response.statusCode}.");
+        }
+      } catch (e) {
+        risorsaEsiste = false;
+        print("ERRORE di rete durante la verifica dell'URL: $e");
+      }
+    }
+
+    // -----------------------------------------------------------------
+    // FASE FINALE: APERTURA
+    // -----------------------------------------------------------------
+    if (risorsaEsiste) {
+      print("Risorsa trovata in '$percorsoFinaleDaAprire'. Procedo con l'apertura...");
+      // Qui inserisci la tua logica per aprire il PDF viewer
+      // es: _apriPdfViewer(percorsoFinaleDaAprire, pagina);
+    } else {
+      print("Fallimento: la risorsa non è stata trovata o non è accessibile.");
+      // Mostra un messaggio di errore all'utente
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('File non trovato in: $percorsoFinaleDaAprire')),
+      );
+    }
+//  PercorsoCompleto=percorsoFinaleDaAprire
+  }
+///  Nuovo verificatore dell'esistenza del file'
+  /// Funzione UNIVERSALE che verifica l'esistenza di un file sia su piattaforme
+  /// native (Windows, Android) sia su Web, chiamando la callback appropriata.
+  Future<void> _VerificaFile({
+    required BuildContext context,
+    required String basePathDaDati,
+    required String subPathDaDati,
+    required String fileNameDaDati,required Function(String percorsoTrovato) inCasoDiSuccesso,
+    required Function(String percorsoTentato) inCasoDiFallimento,
+  }) async
+  {
+    String percorsoFinaleDaAprire = "N/A";
+    bool risorsaEsiste = false;
+
+    print("----------------------------- ");
+    print(" INIZIO VerificaFile");
+    print(" Elementi da verificare: $basePathDaDati + $subPathDaDati + $fileNameDaDati");
+    print("----------------------------- ");
+
+    try {
+      // --- CONTROLLO FONDAMENTALE DELLA PIATTAFORMA (LA CORREZIONE È QUI!) ---
+      if (kIsWeb) {
+        // ***************************************************************
+        // *****          INIZIO LOGICA PER PIATTAFORMA WEB          *****
+        // ***************************************************************
+        print("Piattaforma Web: verifico la risorsa tramite URL HTTP.");
+
+        // 1. URL DI BASE DEL SERVER
+        String baseUrlWeb = "http://192.168.1.100/JamsetPDF";
+
+        // 2. RICOSTRUISCI IL PERCORSO RELATIVO COMPLETO
+        String percorsoRelativo = '$subPathDaDati$fileNameDaDati';
+
+        // 3. PULISCI IL PERCORSO RELATIVO PER RENDERLO UN URL VALIDO
+        //    - Sostituisci tutti i backslash '\' con gli slash '/'
+        String percorsoConSlash = percorsoRelativo.replaceAll(r'\', '/');
+
+        //    - Rimuovi un eventuale slash iniziale per evitare URL doppi
+        if (percorsoConSlash.startsWith('/')) {
+          percorsoConSlash = percorsoConSlash.substring(1);
+          print("Rimosso lo slash iniziale dal percorso relativo.");
+        }
+
+        //    - Codifica gli spazi e altri caratteri speciali
+        String percorsoUrlSafe = Uri.encodeFull(percorsoConSlash);
+
+        // 4. COSTRUISCI L'URL FINALE E VERIFICA
+        percorsoFinaleDaAprire = "$baseUrlWeb/$percorsoUrlSafe";
+        print("URL finale da verificare (corretto): $percorsoFinaleDaAprire");
+
+
+        final response = await http.head(Uri.parse(percorsoFinaleDaAprire));
+        risorsaEsiste = (response.statusCode == 200);
+
+        if (!risorsaEsiste) {
+          print("ERRORE: La risorsa web ha risposto con lo stato: ${response.statusCode}");
+          percorsoFinaleDaAprire = "$percorsoFinaleDaAprire (Status: ${response.statusCode})";
+        }
+      } else {
+        // ***************************************************************
+        // *****        INIZIO LOGICA PER PIATTAFORME NATIVE         *****
+        // ***************************************************************
+        // Questo codice verrà eseguito SOLO se NON siamo sul web.
+        print("Piattaforma Nativa: verifico il file system locale.");
+
+        String basePathTecnico = basePathDaDati;
+        // Questa sezione ora è sicura perché siamo su una piattaforma nativa.
+        if (Platform.isAndroid || Platform.isIOS) {
+          basePathTecnico = '/storage/emulated/0/JamsetPDF'; // Adatta se necessario
+        } else if (Platform.isWindows) {
+          basePathTecnico = r'C:\JamsetPDF'; // Adatta se necessario
+        }
+
+        print('Ricerca del file nativo in: $basePathTecnico$subPathDaDati$fileNameDaDati');
+        FilePathResult risultatoNativo = await ValidaPercorso.checkGenericFilePath(
+          basePath: basePathTecnico,
+          subPath: subPathDaDati,
+          fileNameWithExtension: fileNameDaDati,
+        );
+
+        risorsaEsiste = risultatoNativo.isSuccess;
+        percorsoFinaleDaAprire = risultatoNativo.fullPath ?? "Percorso non generato";
+      }
+    } catch (e) {
+      print("Errore imprevisto durante la verifica: $e");
+      risorsaEsiste = false;
+      percorsoFinaleDaAprire = "Errore durante la verifica: $e";
+    }
+
+    // --- FASE FINALE (invariata) ---
+    if (risorsaEsiste) {
+      print("Risorsa trovata in '$percorsoFinaleDaAprire'. Eseguo inCasoDiSuccesso.");
+      inCasoDiSuccesso(percorsoFinaleDaAprire);
+    } else {
+      print("Fallimento: risorsa non trovata in '$percorsoFinaleDaAprire'. Eseguo inCasoDiFallimento.");
+      inCasoDiFallimento(percorsoFinaleDaAprire);
+    }
+  }
+  /// Metodo helper che raccoglie i dati e CHIAMA ValidaPercorso.
+  Future<FilePathResult> _validateAndShowResult({
+    required BuildContext dialogContext,
+    required String basePathFromInput,
+    String? subPathComponent,
+    String? fileNameComponent,
+    required String numeroPaginaFromCsv,
+  }) async
+  {
+    // 1. Chiamata alla VERA funzione di validazione nel file esterno
+    final FilePathResult validationResult = await ValidaPercorso.checkGenericFilePath(
+      basePath: basePathFromInput,
+      subPath: subPathComponent,
+      fileNameWithExtension: fileNameComponent ?? '', // Passa stringa vuota se null
+
+     // NumeroPagina: numeroPaginaFromCsv,
+    );
+    // 2. Mostra il risultato nello SnackBar, usando il context corretto
+        {
+// ---- INIZIO MODIFICA ----
+
+// 1. Costruisci un messaggio più dettagliato per il debug
+      final String snackBarMessage;
+      final String? generatedPath = validationResult.fullPath;
+
+      if (generatedPath != null && generatedPath.isNotEmpty) {
+// Se il percorso è stato generato, mostralo sempre.
+        snackBarMessage = "${validationResult.message}\n\nPercorso Verificato:\n$generatedPath";
+      } else {
+// Altrimenti, mostra solo il messaggio di errore originale.
+        snackBarMessage = validationResult.message;
+      }
+
+// 2. Usa il nuovo messaggio nel Text del tuo SnackBar
+      ScaffoldMessenger.of(dialogContext).showSnackBar(
+        SnackBar(
+          content: Text(snackBarMessage), // <-- USA IL NUOVO MESSAGGIO DETTAGLIATO
+          backgroundColor: validationResult.isSuccess ? Colors.green : Colors.red,
+          duration: const Duration(seconds: 20), // Aumenta la durata per avere il tempo di leggere
+          action: SnackBarAction(
+            label: 'OK',
+            onPressed: () {
+              ScaffoldMessenger.of(dialogContext).hideCurrentSnackBar();
+            },
+          ),
+        ),
+      );
+      // 3. TERZA PARTE: Restituisce il risultato della validazione
+      return validationResult;
+// ---- FINE MODIFICA ----
+    }
+    // 3. (Opzionale) Se la validazione ha successo, apri il PDF
+    if (validationResult.isSuccess && validationResult.fullPath != null) {
+      await _openPdfInExternalBrowser(validationResult.fullPath!, numeroPaginaFromCsv);
+    }
+  }
 
 // Aggiungi altre chiavi se ti servono altri campi in modo dinamico// Campi per CSV con INTESTAZIONE
   static const String keyTitolo = 'Titolo'; // Adatta questi nomi ESATTAMENTE a come sono nel tuo CSV
@@ -128,7 +802,7 @@ List<List<dynamic>> _csvData = [];
   // All'interno della classe _CsvViewerScreenState:
   String _getCellValue(List<dynamic> row, String columnKey, {String defaultValue = 'N/D'}) {
     // Usa la chiave normalizzata (minuscola) se la tua mappa è stata creata con chiavi minuscole
-    String normalizedKey = columnKey; // O columnKey.toLowerCase() se le chiavi nella mappa sono minuscole
+  String normalizedKey = columnKey; // O columnKey.toLowerCase() se le chiavi nella mappa sono minuscole
     // e le costanti key... sono usate direttamente come arrivano.
     // Dipende da come hai implementato _createColumnIndexMap.
     // Coerenza è la chiave.
@@ -149,22 +823,7 @@ List<List<dynamic>> _csvData = [];
     final Map<String, int> map = {};
     for (int i = 0; i < headers.length; i++) {
       // Normalizza l'header dal CSV (es. minuscolo, trim)
-      // È importante che la normalizzazione qui sia consistente con come
-      // ti aspetti che le tue 'key...' corrispondano.
-      // Se le tue 'key...' sono CaseSensitive e esattamente come nel CSV,
-      // potresti omettere .toLowerCase(). Ma è più robusto normalizzare.
       String headerFromFile = headers[i].toString().trim(); // Potresti voler fare anche .toLowerCase()
-      // se le tue key... sono tutte minuscole
-      // o se vuoi un match case-insensitive.
-      // Per ora, lo lascio così, assumendo che
-      // le tue key... debbano matchare esattamente (case sensitive)
-      // le intestazioni del CSV dopo il trim.
-      // O, meglio ancora, normalizza entrambe a minuscolo.
-
-      // Se le tue costanti 'key...' sono definite con capitalizzazione specifica
-      // (es. keyTitolo = 'Titolo') e vuoi fare un confronto case-insensitive,
-      // allora converti sia headerFromFile sia la costante key a minuscolo prima del confronto.
-      // Esempio con normalizzazione a minuscolo (più robusto):
       String normalizedHeaderFromFile = headerFromFile.toLowerCase();
 
       if (normalizedHeaderFromFile == keyIdBra.toLowerCase()) {
@@ -198,8 +857,10 @@ List<List<dynamic>> _csvData = [];
     }
     return map;
   }
-//Inizio PDF SU BROWSER
-  Future<void> _openPdfInExternalBrowser(String localPdfPath, String pageNumberStr) async { // Rinominata per chiarezza e per evitare conflitti se ci fosse già openPdfInBrowser
+
+///////////////FINE NUOVO Verifica E Apertura universale del PDF su Browser
+  Future<void> _openPdfInExternalBrowser(String localPdfPath, String pageNumberStr)
+  async { // Rinominata per chiarezza e per evitare conflitti se ci fosse già openPdfInBrowser
     int? pageNumber = int.tryParse(pageNumberStr);
     if (pageNumber == null || pageNumber < 1) {
       print('Numero di pagina non valido: $pageNumberStr');
@@ -208,7 +869,7 @@ List<List<dynamic>> _csvData = [];
           SnackBar(content: Text('Numero di pagina non valido: $pageNumberStr')),
         );
       }
-      return;
+    //  return;
     }
 
     // Non c'è più bisogno di: String formattedPath = localPdfPath.replaceAll(r'\', '/');
@@ -280,25 +941,16 @@ List<List<dynamic>> _csvData = [];
       // MODALITÀ 2: CSV SENZA INTESTAZIONE (CAMPI POSIZIONALI)
       // columnKeyOrIdentifier è un IDENTIFICATORE LOGICO che usiamo nello switch
       // per mappare all'INDICE FISSO corretto.
+      /// Verificare i valori prevalenti nei file csv forniti che dovrebbero possedere
+      /// il titolo e il numero pagina e anche il volume(non al'interno del CSV) forse nel DB.
 
     }
     return defaultValue; // Valore di fallback se tutto il resto fallisce
   }
 
- // @override
- // void initState() {
- //   super.initState();
-    // NON aggiungere listener ai controller se il filtro è solo via bottone
- //  }
-
- // @override
- // void dispose() {
- //   _cercaTitoloController.dispose();
- //   _cercaAutoreController.dispose();
- //   super.dispose();
- // }
   //Future<void> (_pickAndLoadCsv) async
-  Future<void> _pickAndLoadCsv() async
+  Future<void> _pickAndLoadCsv()
+  async
   {
     try {
       FilePickerResult? result = await FilePicker.platform.pickFiles(
@@ -313,7 +965,8 @@ List<List<dynamic>> _csvData = [];
           final bytes = result.files.single.bytes!;
           try {
             fileContent = utf8.decode(bytes);
-          } catch (e) {
+          } catch (e)
+          {
             fileContent = latin1.decode(bytes);
           }
         } else {
@@ -373,7 +1026,8 @@ List<List<dynamic>> _csvData = [];
             const SnackBar(content: Text('File CSV caricato con successo!')),
           );
         }
-      } else {
+      }
+      else {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Nessun file selezionato.')),
@@ -394,7 +1048,8 @@ List<List<dynamic>> _csvData = [];
     // Le query _queryTitolo, _queryAutore, e _queryProvenienza sono già state aggiornate
     // e convertite in minuscolo dal onPressed del bottone "Filtra".
 
-    setState(() {
+    setState(()
+    {
       // Se TUTTI i campi di ricerca sono vuoti, mostra tutti i dati
       if (_queryTitolo.isEmpty && _queryAutore.isEmpty && _queryProvenienza.isEmpty
           && _queryVolume.isEmpty && _queryTipoMulti.isEmpty && _queryStrumento.isEmpty) { // <--- AGGIUNTO _queryProvenienza
@@ -465,391 +1120,252 @@ List<List<dynamic>> _csvData = [];
         }).toList();
       }
     });
-
-    // Opzionale: scrolla la lista all'inizio dopo aver filtrato, se hai molti elementi
-    // if (_scrollController.hasClients) {
-    // _scrollController.jumpTo(0.0);
-    // }
   }
 
-
-
-
-    // Opzionale: scrolla la lista all'inizio dopo aver filtrato, se hai molti elementi
-    // if (_scrollController.hasClients) {
-    //   _scrollController.jumpTo(0.0);
-    // }
-  //}
-
-
-  // Funzione chiamata quando si preme il bottone "Apri PDF"
-  void _handleOpenPdfAction({
-    required String titolo,
-    required String volume,
-    required String PercRadice,
-    required String PercResto,
-    required String NumPag,
-    required String NumOrig,
-    required String idBra,
-    required String TipoMulti,
-    required String TipoDocu,
-    required String strumento,
-    required String Provenienza,
-    required String link, // se hai anche un link diretto dal CSV colonna 10
-    // }) {
-    // dA QUI
-  }) async   {
-    String nomeFileDaVolume = volume.endsWith('.pdf') ? volume : '$volume.pdf';
-    String finalPath = kIsWeb ? "Non applicabile per web" : '$_basePdfPath$nomeFileDaVolume';
-    //i campi sel sono relativi agli elementi della riga selezionata in apri pdf
-    // ;
-    ///ESTRAE I Dati Selezionati
-    String SelTitolo = titolo;
-    String SelVolume = volume;
-    String SelPercRadice = PercRadice;
-    String SelPercResto = PercResto;
-    String SelNumPag = NumPag;
-    String SelNumOrig = NumOrig;
-    String SelLink = link;
-    String SelIdBra = idBra;
-    String SelTipoMulti = TipoMulti;
-    String SelTipoDocu = TipoDocu;
-    String SelStrumento = strumento;
-    String SelProvenienza = Provenienza;
-    String SelBasePdfPath = _basePdfPath;
-    String SelfinalPath = finalPath;
-    String Prova2 = 'Prova2';
-    String nomeFile;
-    String nomeFileEstratto = ""; // Variabile per il nome file estratto da SelLink
-    String percorsoDirectoryEstratta = ""; // Variabile per la directory estratta da SelLink
-    String percorsoPdfDaAprireNelDialogo = ""; // Questa sarà la variabile che contiene il path WEB da aprire
-
-
-
-    // TRATTAMENTO nomeFile Inizio
-    // --- INIZIO LOGICA DI ESTRAZIONE nomeFile (CON ESTENSIONE .pdf) ---
-
-    String SelPercorso = link; // Usa il parametro 'link' passato alla funzione
-    if (SelPercorso.startsWith('#')) {
-      SelPercorso = SelPercorso.substring(1);
-    }
-    if (SelPercorso.endsWith('#')) {
-      SelPercorso = SelPercorso.substring(0, SelPercorso.length - 1);
-    }
-// Ora SelPercorso è, ad esempio, "P:\PDF REAL BOOK\BookC\COLOBK.PDF"
-
-    int ultimoBackslashIndex = SelPercorso.lastIndexOf(r'\');
-
-    if (ultimoBackslashIndex != -1) {
-      // Prendi tutto ciò che viene dopo l'ultimo backslash
-      nomeFile = SelPercorso.substring(ultimoBackslashIndex + 1);
-    } else {
-      // Non ci sono backslash, quindi si presume che SelPercorso sia solo il nome del file (con o senza estensione)
-      nomeFile = SelPercorso;
-    }
-    SelPercorso = SelPercorso.substring(0, SelPercorso.length - nomeFile.length);
-
-// Verifica opzionale se vuoi assicurarti che termini con .pdf (case-insensitive)
-// e gestire casi in cui non lo fa, ma per ora questo estrae il nome file completo.
-// Se il 'link' originale non avesse avuto .pdf, nomeFile qui non lo avrebbe.
-
-// Se vuoi ASSICURARTI che nomeFile finisca con .pdf e l'originale lo aveva,
-// e la pulizia non l'ha tolto, questa logica sopra dovrebbe già funzionare.
-// Se il link originale NON AVESSE .pdf, e tu volessi aggiungerlo, sarebbe un'altra logica.
-// Ma dalla tua domanda, sembra che tu voglia PRESERVARE .pdf se c'è.
-    print("InizioAzione Chiama Apertura PDF _handleOpenPdfAction"); // con parametri
-    print("Stringa originale (link): $link");
-    print("Percorso pulito: $SelPercorso");
-    print("Nomefile estratto (CON estensione) campo nomeFile: $nomeFile"); // Dovrebbe essere COLOBK.PDF
-
-// --- FINE LOGICA DI ESTRAZIONE nomeFile (CON ESTENSIONE .pdf) ---
-
-
-
-    //  Fine trattamento nomeFile
-    print('Vediamo cos è SelTitolo $SelTitolo');
-    print('Vediamo cos è SelVolume $SelVolume');
-    print('Vediamo cos è SelNumPag $SelNumPag');
-    print('Vediamo cos è SelNumOrig $SelNumOrig');
-    print('Vediamo cos è SelLink $SelLink');
-    print('Vediamo cos è SelIdBra $SelIdBra');
-    print('Vediamo cos è SelTipoMulti $SelTipoMulti');
-    print('Vediamo cos è SelTipoDocu $SelTipoDocu');
-    print('Vediamo cos è SelStrumento $SelStrumento');
-    print('Vediamo cos è SelProvenienza $SelProvenienza');
-    print('Vediamo cos è SelBasePdfPath $SelBasePdfPath');
-    print('Vediamo cos è FinalPath $finalPath');
-    print('--- Azione Chiama Apertura PDF _handleOpenPdfAction ---');
-    print('Tetolo: $titolo');
-    print('Volume (come nome file?): $nomeFileDaVolume');
-    print('Numero Pagina (da usare con lettore PDF): $NumPag');
-    print('Numero Originale: $NumOrig');
-    print('Path Base Configurato: $_basePdfPath');
-    //print('Path PDF Calcolato (esempio): $finalPath');
-    print('Link diretto da CSV: $link');
-    // dA QUI
-
-    // fino a qui
-    // TODO: Implementare l'apertura effettiva del PDF con un package come `open_file` o `url_launcher` (per link)
-
-
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Dati per PDF: Titolo: $titolo, Volume: $volume, Pag: $NumPag. Path base: $_basePdfPath'),
-        //duration: const Duration(seconds: 10),
-      ),
-    );
-//Da qui emettere un nuovo dialogBox o schermo per verificare gli elementi per costruire il giusto nome di FilePd
-// Titolo ( da ewsporre ) Volume (da esporre) NumPag (da potere variara) Percorso (da modificare) Valore iniziale =
-    Prova2 =SelPercorso + nomeFile;
-    SelBasePdfPath = r'c:\Fantasia\';
-    print('Campo composto da SelPercorso + nomeFile:   $SelPercRadice$SelPercResto$nomeFile');
-    print ('Directory da variare:  $SelPercRadice');
-    print('TitoloBrano: $SelTitolo');
-    print('Strumento contiene $SelStrumento');
-    print('Volume $SelVolume');
-// --- INIZIO NUOVO AlertDialog ---
-    // (Questa è circa la tua riga 213, dopo i print)
-    if (mounted) {
-      // Controller se avevi campi editabili prima, se ora sono solo visualizzabili
-      // e selezionabili, i controller potrebbero non essere necessari per questi specifici campi.
-      // Ma se altri campi sono ancora editabili (come nel mio esempio precedente),
-      // i loro controller rimangono.
-      TextEditingController searchController = TextEditingController(text: Prova2); // <--- INIZIALIZZA QUI
-      await showDialog(
-        context: context,
-        builder: (BuildContext dialogContext) {
-          return AlertDialog(
-            title: const Text('Dettagli Brano Selezionato'), // O usa SelectableText anche qui se vuoi
-            content: SingleChildScrollView(
-              child: ListBody(
-                children: <Widget>[
-                  const Text("Titolo:") , //
-                  SelectableText(SelTitolo.isNotEmpty ? SelTitolo : "N/D"),
-                  const SizedBox(height: 8),
-
-                  const Text("Percorso Radice:"), // Etichetta
-                  SelectableText(SelPercRadice.isNotEmpty  ? SelPercRadice : "N/D"),
-                  const SizedBox(height: 8),
-
-                  const Text("Percorso Finale:"), // Etichetta
-                  SelectableText(SelPercResto.isNotEmpty ? SelPercResto : "N/D"),
-                  const SizedBox(height: 8),
-
-                  const Text("Nome del File: nomeFile"), // Etichetta
-                  SelectableText(nomeFile.isNotEmpty ? nomeFile : "N/D"),
-                  const SizedBox(height: 8),
-
-                  const Text('Altro Nome del File: nomeFileDaVolume :"'), // Etichetta
-                  SelectableText(nomeFileDaVolume.isNotEmpty ? nomeFileDaVolume : "N/D"),
-                  const SizedBox(height: 8),
-
-                  const Text("Pagina:"), // Etichetta
-                  SelectableText(SelNumPag.isNotEmpty ? SelNumPag : "N/D"),
-                  const SizedBox(height: 8),
-
-
-                  const Text("Link Originale:"), // Etichetta
-                  SelectableText(SelLink.isNotEmpty ? SelLink : "N/A"),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: searchController, // _searchController ora contiene il testo di Prova2
-                    decoration: InputDecoration(
-                      // Se vuoi ancora usare Prova2 nell'hintText, va bene, ma
-                      // l'hintText appare solo se il campo è vuoto.
-                      // Il testo effettivo nel campo sarà quello di Prova2 grazie al controller.
-                      hintText: 'Nome del PDF Proposto (inizialmente: $SelPercRadice + $SelPercResto + $nomeFile)',
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(30),
-                        borderSide: BorderSide.none,
-                      ),
-
-                    ),
-                  ),
-
-
-                ],
+  // Funzione Dialogo per la Verifica di un Risultato
+  void _mostraDialogoRisultatoVerifica(
+      bool esitoPositivo,
+      String percorsoVerificato,
+      String pagina,
+      ) {
+    showDialog(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          title: Text(esitoPositivo ? "File Trovato!" : "File non Trovato"),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text("Percorso verificato:"),
+              const SizedBox(height: 8),
+              SelectableText(
+                percorsoVerificato,
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: esitoPositivo ? Colors.green.shade800 : Colors.red.shade800,
+                ),
               ),
-
-            ),
-            actions: <Widget>[
-              TextButton(
-                child: const Text('Ritorna alla lista'),
-                onPressed: () {
-                  // Azione per tornare indietro: chiude semplicemente questo dialogo.
-                  // L'utente tornerà alla schermata precedente che mostrava la lista.
-                  Navigator.of(dialogContext).pop('ritorna_alla_lista'); // Chiude il dialogo
-                  // Puoi passare un valore per identificare l'azione se necessario
-                },
-              ),
-              const SizedBox(width: 8), // Aggiunge un po' di spazio tra i bottoni (opzionale)
-              ElevatedButton( // Ho cambiato in ElevatedButton per distinguerlo, ma puoi usare TextButton
-                child: const Text('Visualizza PDF'),
-                onPressed: () async  {
-                  // RECUPERA IL VALORE CORRENTE DAL TEXTFIELD TRAMITE IL SUO CONTROLLER
-                  String percorsoPdfDaAprire = searchController.text.trim(); // .trim() per rimuovere spazi bianchi inutili
-
-                  // Puoi anche recuperare il valore della pagina se hai un campo per quello
-                  // String paginaDaAprire = paginaController.text.trim();
-////%%%%%%%%%%%%%%%%%%%%%%%%%% CARTELLA SU TCL NXTPaper (non ha una scheda e dunque questo è il percorso)
-                //   files /storage/emulated/0/JamsetPDF
-////%%%%%%%%%%%%%%%%%%%%%%%%%% CARTELLA SU TCL NXTPaper (non ha una scheda e dunque questo è il percorso)
-                  print('Bottone "Visualizza PDF" premuto. Percorso PDF da usare: $percorsoPdfDaAprire');
-                  print('Pagina da aprire: $SelNumPag');
-// TODO: Implementare una funzione che verifichi l'esistenza del File &PercorsoPdfDaAprire prima dell'apertura effettiva
-/// Inizia qui la chiamata a visualizza WEB un if per verifica con if (kIsWeb) {
-
-                  Uri fileUri;
-                  // NOTA: Platform.isWindows non è affidabile per il web per determinare il formato del path.
-                  // Se il path viene DAL CSV ed è in formato Windows (P:\...), allora Uri.file con windows:true
-                  // è corretto anche se Flutter è compilato per web, perché stai interpretando un path *esterno*.
-                  // Tuttavia, l'accesso diretto a 'file:///' da un'app web è problematico.
-                  // Questa logica è più pensata per mobile/desktop che lanciano un browser esterno.
-                  if (!kIsWeb && Platform.isWindows) {
-                    fileUri = Uri.file(percorsoPdfDaAprire, windows: true);
-                  } else if (kIsWeb) {
-                    // Per il web, se il localPdfPath è un path del filesystem locale dell'utente (es. "P:\..."),
-                    // questo TENTATIVO di aprirlo direttamente in un browser esterno con file:///
-                    // probabilmente fallirà a causa delle policy di sicurezza del browser.
-                    // È più un costrutto per "se il browser *potesse* accedere a questo path locale".
-                    // Per Windows path style sul web, è comunque utile windows:true per la corretta formattazione dell'URI
-                    // nel caso (improbabile) che il browser lo permetta.
-                    // Dovrai assicurarti che localPdfPath sia già URL encoded se contiene spazi, ecc.
-                    // o che sia un path che Uri.file può gestire correttamente.
-                    // Spesso, per i file locali sul web, l'utente li seleziona, e ottieni bytes o un blob URL.
-                    print("Tentativo di costruire un URI file:// per il web. L'accesso diretto potrebbe essere bloccato dal browser.");
-                    // Assumiamo che se è web e il path è stile Windows, vogliamo windows:true
-                    // Questo è speculativo per il web con `file:///`
-                    if (percorsoPdfDaAprire.contains(r'\') && percorsoPdfDaAprire.contains(':')) { // heuristica per path windows
-                      fileUri = Uri.file(percorsoPdfDaAprire, windows: true);
-                      percorsoPdfDaAprire = fileUri.toString();
-                      print('Percorso PDF Rielaborato per WEB : $percorsoPdfDaAprire');
-                    } else {
-                      fileUri = Uri.parse(percorsoPdfDaAprire);// Se è già un URL o un path stile Unix
-
-                      //percorsoPdfDaAprire = fileUri;
-                      percorsoPdfDaAprire = fileUri.toString();
-                      print('Percorso PDF Rielaborato per WEB : $percorsoPdfDaAprire');
-
-                    }
-                  }
-                  final OpenResult result
-                ////////////////////////////////////////////////////////////////////////////////
-                ////////////// CHIAMATA A OpenFilex per aprire il PDF o anche altri Files //////
-                ////////////////////////////////////////////////////////////////////////////////
-                  = await OpenFilex.open(percorsoPdfDaAprire);
-
-                  if (result.type != ResultType.done) {
-                    if (mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Impossibile aprire il PDF: ${result.message}')),
-                      );
-                    }
-                  } else {
-                    // Opzionale: puoi mostrare un messaggio di successo o non fare nulla
-                    // perché l'app esterna si sarà aperta.
-                  }
-
-                  /// Finisce qui la chiamata a visualizza WEB un if per verifica con if (kIsWeb) {
-                  // }
-                  // Chiudi il dialogo e passa i dati necessari per l'azione successiva.
-                  // Puoi passare una Map per strutturare meglio i dati.
-                  Navigator.of(dialogContext).pop({
-                    'azione': 'visualizza_pdf',
-                    'percorso': percorsoPdfDaAprire,
-                    // 'pagina': paginaDaAprire, // Se hai anche la pagina
-                  });
-                },
-              ),
-              // Se avevi un bottone Annulla e vuoi mantenerlo:
-              // TextButton(
-              //   child: const Text('Annulla Modifiche'), // O semplicemente 'Chiudi'
-              //   onPressed: () {
-              //     Navigator.of(dialogContext).pop(); // Chiude il dialogo senza fare altro
-              //   },
-              // ),
             ],
+          ),
+          actions: <Widget>[
+            TextButton(
+              child: const Text('Chiudi'),
+              onPressed: () {
+                Navigator.of(dialogContext).pop();
+              },
+            ),
+            // Mostra il pulsante "Apri" solo se il file è stato trovato
+            if (esitoPositivo)
+              ElevatedButton(
+                child: const Text('Apri'),
+                onPressed: () {
+                  Navigator.of(dialogContext).pop(); // Chiudi il dialogo
+                  _openPdf(percorsoVerificato, pagina); // Lancia l'apertura del PDF
+                },
+              ),
+          ],
+        );
+      },
+    );
+  }
+  // Funzione isolata per l'apertura effettiva del file
+  // Funzione isolata per l'apertura effettiva del file
+  Future<void> _openPdf(String percorso, String paginaStr) async {
+    int pageNumber = int.tryParse(paginaStr) ?? 1;
 
-          );
-        },
-      );
+    // --- CORREZIONE CRUCIALE: Converti la stringa in un oggetto Uri ---
+    final Uri uriToLaunch;
+
+    if (kIsWeb) {
+      // Per il web, l'URI viene creato con Uri.parse
+      uriToLaunch = Uri.parse('$percorso#page=$pageNumber');
+    } else {
+      // Per piattaforme native (Windows, Android), l'URI viene creato con Uri.file
+      uriToLaunch = Uri.file(percorso);
+      // Nota: il parametro della pagina su nativo dipende dal lettore PDF
     }
 
+    print("Tentativo di lanciare l'URI: ${uriToLaunch.toString()}");
+
+    if (await canLaunchUrl(uriToLaunch)) {
+      await launchUrl(
+        uriToLaunch,
+        mode: LaunchMode.externalApplication,
+      );
+    } else {
+      print('Impossibile lanciare ${uriToLaunch.toString()}');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Impossibile aprire il link: $uriToLaunch')),
+        );
+      }
+    }
   }
+ // cancellato tutto il codice di apertura del PDF
 
   // Funzione per chiedere all'utente il path base (esempio)
 // All'interno della classe _CsvViewerScreenState
 
-  Future<void> _askForBasePath({
+  Future<void> _askForBasePath(
+      {
     String? currentTitolo,   // Parametro per il titolo del brano
     String? currentVolume,   // Parametro per il volume
     String? currentNumPag,
     String? currentPercRadice,// Parametro per la cartella radice dei file PDF
-    String? currentPercResto, // Parametro per il resto della cartella dei file PDF// il numero di pagina
-  }) async {
-    if (kIsWeb) return;
+    String? currentPercResto,
+    String? volumeInfo,
+    String? pagInfo,
+    String? currentpercorsoPdfDaAprire// Parametro per il resto della cartella dei file PDF// il numero di pagina
+  })
+  async {
+    //if (kIsWeb) return;
+    String SelPdfDaAprire = (currentpercorsoPdfDaAprire ?? '') + (currentVolume ?? '');
+    String percorsoVerificato = SelPdfDaAprire;
 
-    TextEditingController pathController = TextEditingController(text: _basePdfPath);
+    TextEditingController pathController = TextEditingController(text: SelPdfDaAprire );
+
     String? newPath = await showDialog<String>(
       context: context,
-      builder: (BuildContext context) {
-        String dialogTitleText; // Variabile locale per il testo del titolo
+        // SOSTITUISCI IL TUO BLOCCO builder CON QUESTO CODICE COMPLETO
 
-        // --- USA I PARAMETRI DELLA FUNZIONE QUI ---
-        if (currentTitolo != null && currentTitolo.isNotEmpty) {
-          // Se currentTitolo è fornito, usalo per un titolo più specifico
-          String volumeInfo = "";
-          if (currentVolume != null && currentVolume.isNotEmpty) {
-            volumeInfo = "dal volume: $currentVolume";
-            if (currentNumPag != null && currentNumPag.isNotEmpty) {
-              volumeInfo += " (Pag. $currentNumPag)";
-            }
-          }
-          dialogTitleText =
-          'Brano Selezionato:\n'
-              '$currentTitolo\n' // <-- USA currentTitolo
-              '$volumeInfo\n\n'
-              'Imposta il percorso base dei PDF:';
-        } else if (_basePdfPath.isNotEmpty) {
-          // Se non c'è un brano specifico, ma il path è già stato configurato
-          dialogTitleText = 'Path base PDF attuale:\n$_basePdfPath\n\nModifica o conferma:';
-        } else {
-          // Caso base: nessuna info specifica, path non configurato
-          dialogTitleText = 'Configura Percorso Base PDF';
-        }
+        builder: (BuildContext context) {
+// Variabili locali al dialogo
+          String? percorsoVerificato;
+          String dialogTitleText; // Variabile locale per il testo del titolo
+////
+////
+          final TextEditingController pathController = TextEditingController(text: _basePdfPath);
 
-        return AlertDialog(
-          title: Text(dialogTitleText), // Usa la variabile locale costruita
-          content: TextField(
-            controller: pathController,
-            decoration: InputDecoration( // <-- RIMUOVI 'const'
-                hintText:
-                'Brano Selezionato:\n  Tit : $currentTitolo \n  Vol : $currentVolume \n  Pag : $currentNumPag \n'
+// 1. Inizia lo StatefulBuilder
+          return StatefulBuilder(
+            builder: (context, setStateDialog) { // <-- Qui viene creato il nostro setStateDialog!
 
-              //decoration: const InputDecoration(hintText:
-              //'Brano Selezionato:\n  Tit : $currentTitolo \n  Vol : $currentVolume \n  Pag : $currentNumPag \n'
-              //"Es. C:\\Spartuti\\ o /sdcard/Spartiti/"
-            ),
-            autofocus: true,
-            maxLines: null, // Permette più righe se il testo del titolo è lungo
-          ),
-          actions: <Widget>[
-            TextButton(
+// --- Da qui in poi, setStateDialog è disponibile ---
+
+// Logica per costruire il titolo del dialogo (la tua logica va qui)
+              String dialogTitleText = 'Configura Percorso'; // Titolo di default
+// ... (la tua logica if/else per `dialogTitleText`) ...
+              if (currentTitolo != null && currentTitolo.isNotEmpty) {
+// Se currentTitolo è fornito, usalo per un titolo più specifico
+                String titoloInfo = " : $currentTitolo";
+                if (currentVolume != null && currentVolume.isNotEmpty) {
+                  volumeInfo = "dal volume: $currentVolume";
+                  if (currentNumPag != null && currentNumPag.isNotEmpty) {
+                    pagInfo = " (Pag. $currentNumPag)";
+                  }
+                }
+                dialogTitleText =
+                'Brano Selezionato:\n'
+                    '$currentTitolo\n' // <-- USA currentTitolo
+                    '$volumeInfo\n'
+                    '$pagInfo\n'
+                    'PercorsoVerificato: $percorsoVerificato '
+
+                    'Imposta il percorso base dei PDF:';
+              } else if (_basePdfPath != null && _basePdfPath!.isNotEmpty) {
+//              } else if (_basePdfPath.isNotEmpty) {
+// Se non c'è un brano specifico, ma il path è già stato configurato
+                dialogTitleText = 'Path base PDF attuale:\n$_basePdfPath\n\nModifica o conferma:';
+              } else {
+// Caso base: nessuna info specifica, path non configurato
+                dialogTitleText = 'Configura Percorso Base PDF';
+              }
+
+// 2. Costruisci e restituisci l'AlertDialog completo
+              return AlertDialog(
+                  title: Text(dialogTitleText),
+                  content: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+// Inserisci qui tutti i tuoi widget di testo e il TextField
+// Esempio:
+                        Text('Percorso proposto: $SelPdfDaAprire'),
+                        TextField(controller: pathController),
+                        SizedBox(height: 16),
+
+// Blocco dinamico che mostra il risultato (apparirà dopo la validazione)
+                        if (percorsoVerificato != null)
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text("Percorso validato:", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blue)),
+                              SelectableText(percorsoVerificato!),
+                            ],
+                          ),
+                      ],
+                    ),
+                  ),
+                  actions: <Widget>[
+// Bottone Annulla
+              TextButton(
               child: const Text('Annulla'),
-              onPressed: () {
-                Navigator.of(context).pop();
+              onPressed: () => Navigator.of(context).pop(),
+              ),
+
+// Bottone 2: Apri Direttamente (usa il valore dal CSV)
+              TextButton(
+              child: const Text('Apri Diretto'),
+              onPressed: () async {
+                // Gestisci il caso in cui SelPdfDaAprire sia null
+                if (SelPdfDaAprire == null || SelPdfDaAprire!.isEmpty) {
+                  // Se non c'è un percorso da aprire, non fare nulla o mostra un messaggio
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Nessun percorso diretto da aprire specificato nei dati.')),
+                  );
+                  return; // Interrompi l'esecuzione
+                }
+                final FilePathResult result = await _validateAndShowResult(
+                  dialogContext: context,
+                  basePathFromInput: currentPercRadice!, // Usa il valore modificato
+                  subPathComponent: currentPercResto,
+                  fileNameComponent: currentVolume,
+                  numeroPaginaFromCsv: currentNumPag ?? '1',
+                );
+
+
+              setStateDialog(() {
+              percorsoVerificato = result.fullPath;
+              });
+                print("----Chiamata Apri Diretto------");
+                print("currentPercRadice   $currentPercRadice");
+                print("currentPercResto $currentPercResto");
+                print("currentVolume $currentVolume");
+                print("currentNumPag $currentNumPag");
+              print("Apri Diretto - Percorso finale: ${result.fullPath}");
               },
-            ),
-            TextButton(
-              child: const Text('Salva'),
-              onPressed: () {
-                Navigator.of(context).pop(pathController.text);
+              ),
+// Bottone 3: Apri con Trasformazione (usa il valore dal TextField)
+                    TextButton(
+                      child: const Text('Apri con Trasformazione'),
+                      onPressed: () async {
+                        final FilePathResult result = await _validateAndShowResult(
+                          dialogContext: context,
+                          basePathFromInput: currentPercRadice!, // Usa il valore modificato
+                          subPathComponent: currentPercResto,
+                          fileNameComponent: currentVolume,
+                          numeroPaginaFromCsv: currentNumPag ?? '1',
+                        );
+// AGGIORNA L'INTERFACCIA DEL DIALOGO
+// Questa chiamata ora è VALIDA perché si trova dentro il builder corretto
+              setStateDialog(() {
+              percorsoVerificato = result.fullPath;
+              });
+              print("----Chiamata Apri con Trasformazione------");
+              print("currentPercRadice   $currentPercRadice");
+              print("currentPercResto $currentPercResto");
+              print("currentVolume $currentVolume");
+              print("currentNumPag $currentNumPag");
+              print("Percorso finale trasformato: ${result.fullPath}");
               },
-            ),
-          ],
-        );
-      },
+              ),
+              ], // Fine della lista 'actions'
+              ); // <-- FINE DELL'AlertDialog
+              }, // <-- FINE del builder dello StatefulBuilder
+              ); // <-- FINE dello StatefulBuilder
+            }, // <-- FINE del builder dello showDialog
     );
 
 
@@ -879,20 +1395,7 @@ List<List<dynamic>> _csvData = [];
     }
   }
 
-   // @override
-   // void initState() {
-   //   super.initState();
-      // NON aggiungere listener ai controller se il filtro è solo via bottone
-    //}
 
-    //@override
-    //void dispose() {
-    //  _cercaTitoloController.dispose();
-    //  _cercaAutoreController.dispose();
-    //  super.dispose();
-    //}
-
-  // qui c'era la vecchia logica con un solo campo@override
   @override
   Widget build(BuildContext context) {
     // Rivedi questo intero blocco con attenzione per errori di sintassi
@@ -912,14 +1415,14 @@ List<List<dynamic>> _csvData = [];
         ),
       ),
     ////FINE  Immagine di background
-
+        // Emette la zona alta dello schermo con Campi per il filtro del CSV
       Scaffold(
       appBar: AppBar(
         title:  Text('Spartiti Visualizzatore $Laricerca'),
         bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(150.0), // Potrebbe essere sufficiente, da aggiustare
+          preferredSize: const Size.fromHeight(180.0), // Potrebbe essere sufficiente, da aggiustare
 
-          // preferredSize: const Size.fromHeight(170.0), // Aggiusta!
+          // Campi per il filtro del CSV
           child: Padding(
             padding: const EdgeInsets.all(8.0),
             child: Column(
@@ -1003,7 +1506,6 @@ List<List<dynamic>> _csvData = [];
                   ],
                 ),
                 const SizedBox(height: 8), // Spazio tra le righe di filtri
-
                 // --- SECONDA RIGA DI FILTRI ---
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -1079,10 +1581,12 @@ List<List<dynamic>> _csvData = [];
                   ],
                 ),
                 const SizedBox(height: 12), // Spazio prima del bottone
+                /// emette la lista dei criteri di filtro indicati
                 Center(
                   child: ElevatedButton.icon(
                     icon: const Icon(Icons.search), // Assicurati di avere anche 'icon' e 'label'
                     label: const Text('Filtra'),
+                    /// Bottone Filtra
                     onPressed: () {                  // <--- QUESTA PARTE È FONDAMENTALE
                       // La tua logica per aggiornare le query e chiamare _filterData()
                    //   String? Laricerca,
@@ -1130,6 +1634,7 @@ List<List<dynamic>> _csvData = [];
 
     floatingActionButton: _csvData.isNotEmpty
           ? FloatingActionButton.extended(
+      /// Bottone Nuovo CVS
         onPressed: _pickAndLoadCsv,
         label: const Text('Nuovo CSV'),
         icon: const Icon(Icons.file_upload),
@@ -1141,7 +1646,8 @@ List<List<dynamic>> _csvData = [];
   }
 
 // Estrai questi metodi per una migliore leggibilità del build
-  Widget _buildEmptyState() {
+  Widget _buildEmptyState()
+  {
     // ... la tua logica per lo stato vuoto
     return Container( // AVVOLGI CON CONTAINER
       color: Colors.blueGrey ,
@@ -1180,6 +1686,7 @@ List<List<dynamic>> _csvData = [];
         ElevatedButton.icon(
           icon: const Icon(Icons.upload_file_outlined),
           label: const Text('Carica File CSV'),
+          /// Bottone Nuovo CVS
           onPressed: _pickAndLoadCsv,
         ),
 
@@ -1260,16 +1767,16 @@ List<List<dynamic>> _csvData = [];
                       ),
                     ),
                   ),
+                  // print("Apri File Titolo: $titolo Volume:$volume PercRadice:$PercRadice PercResto: $PercResto ");
+
                   if (titolo != 'N/D' && volume != 'N/D')
                     IconButton(
                       icon: const Icon(Icons.picture_as_pdf_outlined, color: Colors.redAccent),
-                      tooltip: 'Apri File',
+                      tooltip: 'Apri File Direttamente',
                       onPressed: () {
                         _handleOpenPdfAction(
                           titolo: titolo,
                           volume: volume,
-                          PercRadice: PercRadice,
-                          PercResto: PercResto,
                           NumPag: numPag,
                           NumOrig: numOrig,
                           idBra: idBra,
@@ -1281,17 +1788,21 @@ List<List<dynamic>> _csvData = [];
                         );
                       },
                     ),
-                  if (!kIsWeb)
+                  //if (!kIsWeb)
                     IconButton(
                       icon: const Icon(Icons.settings_outlined),
                       tooltip: 'Configura Path PDF',
-                      onPressed: () {
+                      ////Bottone Configurazione Path PDF
+                      onPressed: ()
+                                    {
                         _askForBasePath(
                           currentTitolo: titolo,
                           currentVolume: volume,
                           currentNumPag: numPag,
                           currentPercRadice: PercRadice,
                           currentPercResto: PercResto,
+                          currentpercorsoPdfDaAprire: PercRadice + PercResto,
+
                            );
                       },
                     ),

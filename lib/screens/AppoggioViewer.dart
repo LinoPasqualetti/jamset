@@ -712,7 +712,7 @@ class _CsvViewerScreenState extends State<CsvViewerScreen> {
         String dialogTitleText; // Variabile locale per il testo del titolo
 
         // --- USA I PARAMETRI DELLA FUNZIONE QUI ---
-        if (currentTitolo != null && currentTitolo.isNotEmpty) {
+ //       if (currentTitolo != null && currentTitolo.isNotEmpty) {
           // Se currentTitolo è fornito, usalo per un titolo più specifico
           String volumeInfo = "";
           if (currentVolume != null && currentVolume.isNotEmpty) {
