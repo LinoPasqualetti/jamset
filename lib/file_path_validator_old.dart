@@ -2,7 +2,6 @@
 import 'package:flutter/foundation.dart';
 
 import 'dart:io';
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:path/path.dart' as p;
 
 // La classe FilePathResult non cambia

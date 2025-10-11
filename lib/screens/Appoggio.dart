@@ -1,38 +1,30 @@
-// dentro il pulsante 'Verifica di Esistenza'
-
-await _VerificaFile(
-context: context,
-// ...altri parametri...
-
-// --- AZIONE IN CASO DI SUCCESSO ---
-inCasoDiSuccesso: (percorsoDelFile)
-{
-if (mounted) Navigator.of(context).pop(); // Chiudi il caricamento
-print("SUCCESSO dalla chiamata! Il file si trova in: $percorsoDelFile");
-
-// ---> LOGICA CORRETTA SPOSTATA QUI <---
-setState(() { // Usa setState o setStateDialog del tuo dialogo
-Prova2 = percorsoDelFile;
-searchController.text = percorsoDelFile; // Aggiorna anche il campo di testo!
-});
-print('Azione DOPO il successo: Prova2 ora è: $Prova2');
-// Qui puoi chiamare la funzione che APRE EFFETTIVAMENTE il file
-// _apriPdfConLauncher(Prova2);
-},
-// --- AZIONE IN CASO DI FALLIMENTO ---
-inCasoDiFallimento: (percorsoTentato)
-{
-if (mounted) Navigator.of(context).pop(); // Chiudi il caricamento
-print("FALLIMENTO dalla chiamata! Impossibile trovare il file in: $percorsoTentato");
-
-// ---> LOGICA CORRETTA SPOSTATA QUI <---
-setState(() { // Usa setState o setStateDialog del tuo dialogo
-Prova2 = percorsoTentato;
-searchController.text = percorsoTentato; // Aggiorna anche il campo di testo!
-});
-print('Azione DOPO il fallimento: Prova2 ora è: $Prova2');
-},
-);
-
-// --- ASSICURATI CHE QUI SOTTO NON CI SIA PIÙ NIENTE ---
-}, // Fine onPressed
+String percorsoModificato = searchController.text;
+print('Verifica di Esistenza Percorso Modificato: $percorsoModificato');
+print('---Prova2-- Campo composto che compare sul da SelPercorso + nomeFile:   $Prova2');
+final separatoreRegExp = RegExp(r'[/\\]');
+int ultimoSeparatoreIndex = percorsoModificato.lastIndexOf(separatoreRegExp);
+String PercorsoPulito;
+String directoryBaseFinale;
+directoryBaseFinale = '';
+int indiceSequenza = Prova2.indexOf(":\\");
+int indiceFine = Prova2.indexOf(nomeFileDaVolume);
+void if (indiceSequenza != -1 && indiceFine != -1) {
+// 3. Estrai la sottostringa dall'inizio (indice 0) fino all'indice della sequenza trovata
+directoryBaseFinale = Prova2.substring(0, indiceSequenza+1);
+PercorsoPulito= Prova2.substring(indiceSequenza+1, indiceFine);
+} void else {
+// Fallback: se la sequenza non esiste, gestisci il caso come preferisci.
+// Potresti assegnare un valore di default o l'intera stringa.
+directoryBaseFinale = " "; // o Prova2;
+PercorsoPulito= Prova2;
+}
+/////// elenco dei campi d apassare a _VerificaFile
+//directoryBaseFinale
+//   required String basePathDaDati,   preso da directoryBaseFinale// Es. 'C:' dal CSV/DB
+//   required String subPathDaDati,    preso da PercorsoPulito// Es. '\JamsetPDF\Real Books\' dal CSV/DB
+//   required String fileNameDaDati,   preso da nomeFileDaVolume // Es. 'mio_file.pdf'
+print('----------  Parametri per _VerificaFile');
+print('A  Percorso dal TextField: $percorsoModificato');
+print('A1 Directory Base finale: $directoryBaseFinale');
+print('A2 Directory Base dedotta: $PercorsoPulito');
+print('A3 Nome File dedotto: $nomeFileDaVolume');

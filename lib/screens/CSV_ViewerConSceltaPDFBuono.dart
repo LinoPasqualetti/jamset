@@ -7,7 +7,7 @@ import 'dart:convert';
 // Rimuovi questo se non lo usi più: import 'package:jamset/screens/device_selection_screen.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 //Pacchetti per apertura files (PDF o altri) e per i percorsi
-import 'package:open_filex/open_filex.dart'; // Per aprire file
+// Per aprire file
 // Per aprire URL
 // Per manipolare i percorsi, aggiungi path: ^X.Y.Z a pubspec.yaml
 // ... altri import
@@ -15,7 +15,6 @@ import 'package:url_launcher/url_launcher.dart'; // NECESSARIO PER url_launcher 
 import 'package:jamset/file_path_validator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http; // Aggiungi questo import per le chiamate HTTP
-import 'package:path/path.dart' as p;
 
 class CsvViewerScreen extends StatefulWidget {
   const CsvViewerScreen({super.key});
@@ -78,7 +77,7 @@ class _CsvViewerScreenState extends State<CsvViewerScreen>
   ];
 //  String _basePdfPath = ""; // Variabile per memorizzare il path base dei PDF
   // NUOVE VARIABILI PER LA MAPPATURA DINAMICA DELLE COLONNE
-  bool _csvHasHeaders = true; // o come la gestisci
+  final bool _csvHasHeaders = true; // o come la gestisci
   Map<String, int> _columnIndexMap = {};
   List<String> _csvHeaders = []; // Per tenere traccia delle intestazioni effettive
   @override
@@ -86,6 +85,7 @@ class _CsvViewerScreenState extends State<CsvViewerScreen>
     super.initState();
   }
 //  @override
+  @override
   void dispose() {
     // ... dispose degli altri controller ...
     _cercaTitoloController.dispose();
@@ -213,13 +213,8 @@ class _CsvViewerScreenState extends State<CsvViewerScreen>
 
     Prova2 =SelPercorso + nomeFile;
 
-    if (Prova2 is Null)   {
-      // Prendi tutto ciò che viene dopo l'ultimo backslash
-      Prova2 =SelPercorso + nomeFile;
-    } else {
-      print('Rientro dalla validazione nuovo Prova2: $Prova2 '); // Non ci sono backslash, quindi si presume che SelPercorso sia solo il nome del file (con o senza estensione)
-    }
-
+    print('Rientro dalla validazione nuovo Prova2: $Prova2 '); // Non ci sono backslash, quindi si presume che SelPercorso sia solo il nome del file (con o senza estensione)
+  
 
 
     SelBasePdfPath = r'c:\Fantasia\';
@@ -1196,7 +1191,7 @@ class _CsvViewerScreenState extends State<CsvViewerScreen>
                   child: const Text('Apri Diretto'),
                   onPressed: () async {
                     // Gestisci il caso in cui SelPdfDaAprire sia null
-                    if (SelPdfDaAprire == null || SelPdfDaAprire!.isEmpty) {
+                    if (SelPdfDaAprire.isEmpty) {
                       // Se non c'è un percorso da aprire, non fare nulla o mostra un messaggio
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(content: Text('Nessun percorso diretto da aprire specificato nei dati.')),
@@ -1489,11 +1484,11 @@ class _CsvViewerScreenState extends State<CsvViewerScreen>
                               print('Nessun filtro  applicato.');
                             } else
                             { Laricerca = "Applicato filtro su:";
-                            if (_queryTitolo.isNotEmpty) {  Laricerca += " Titolo   $_queryTitolo -";};
-                            if (_queryAutore.isNotEmpty) { Laricerca += " Autore   $_queryAutore - ";};
-                            if (_queryProvenienza.isNotEmpty) { Laricerca += " Provenienza $_queryProvenienza - ";};
-                            if (_queryVolume.isNotEmpty) { Laricerca += " Volume $_queryVolume - " ;};
-                            if (_queryTipoMulti.isNotEmpty) { Laricerca += " TipoMulti $_queryTipoMulti - ";};
+                            if (_queryTitolo.isNotEmpty) {  Laricerca += " Titolo   $_queryTitolo -";}
+                            if (_queryAutore.isNotEmpty) { Laricerca += " Autore   $_queryAutore - ";}
+                            if (_queryProvenienza.isNotEmpty) { Laricerca += " Provenienza $_queryProvenienza - ";}
+                            if (_queryVolume.isNotEmpty) { Laricerca += " Volume $_queryVolume - " ;}
+                            if (_queryTipoMulti.isNotEmpty) { Laricerca += " TipoMulti $_queryTipoMulti - ";}
                             if (_queryStrumento.isNotEmpty) { Laricerca += " Strumento $_queryStrumento - ";}
                             }
 

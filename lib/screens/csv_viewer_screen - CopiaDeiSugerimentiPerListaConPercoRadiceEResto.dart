@@ -113,7 +113,7 @@ final DataSourceOrigin dataSource;
 
 
 // La tua classe StatefulWidget (CsvViewerScreen)
-class CsvViewerScreen extends StatefulWidget {
+class CsvViewerScreen extends void StatefulWidget {
   // ... (tuo codice esistente) ...
   // Potresti passare qui il percorso del CSV iniziale o parametri del DB
   const CsvViewerScreen({Key? key /*, altri parametri */}) : super(key: key);
@@ -126,40 +126,40 @@ class CsvViewerScreen extends StatefulWidget {
 //********************************************************************************
 //  MODIFICHE E AGGIUNTE PRINCIPALI SARANNO ALL'INTERNO DI QUESTA CLASSE
 //********************************************************************************
-class _CsvViewerScreenState extends State<CsvViewerScreen> {
+class _CsvViewerScreenState extends void State<CsvViewerScreen> {
 
   // Controller per i filtri (come li avevi definiti)
-  final TextEditingController _titoloFilterController = TextEditingController();
+  final TextEditingController titoloFilterController = TextEditingController();
   // ... _archivioFilterController, _volumeFilterController, ecc. ...
-  final TextEditingController _autoreFilterController = TextEditingController();
-  late List<TextEditingController> _filterControllers;
+  final TextEditingController autoreFilterController = TextEditingController();
+  late List<TextEditingController> filterControllers;
 
   // Nuove liste per gestire gli oggetti Brano
-  List<Brano> _tuttiIBani = [];
-  List<Brano> _braniFiltrati = [];
+  List<Brano> tuttiIBani = [];
+  List<Brano> braniFiltrati = [];
 
-  bool _isLoading = false;
-  final bool _csvHasHeaders = true; // Mantieni la tua logica per questo
+  bool isLoading = false;
+  final bool csvHasHeaders = true; // Mantieni la tua logica per questo
 
   // Le tue costanti per le chiavi e gli indici fissi del CSV.
   // Queste sono FONDAMENTALI per Brano.fromCsvRow
   // ESEMPIO (assicurati che corrispondano al tuo codice e alle necessità)
-  static const String keyid_univoco_globale = 'id_univoco_globale';
-  static const String keyIdBra = 'IdBra';
-  static const String keyTitolo = 'Titolo';
-  static const String keyAutore = 'Autore';
-  static const String keyStrumento = 'strumento'; // Occhio al case
-  static const String keyVolume = 'Volume';
-  static const String keyPercRadice = 'PercRadice';
-  static const String keyPercResto = 'PercResto';
-  static const String keyArchivioProvenienza = 'ArchivioProvenienza';
-  static const String keyTipoMulti = 'TipoMulti';
-  static const String keyPrimoLink = 'PrimoLink'; // Corrisponde al CSV? O era PrimoLink?
-  static const String keyNumPag = 'NumPag';
-  static const String keyTipoDocu = 'TipoDocu';
-  static const String keyNumOrig = 'NumOrig';
-  static const String keyIdVolume = 'IdVolume';
-  static const String keyIdAutore = 'IdAutore';
+  const String keyidUnivocoGlobale = 'id_univoco_globale';
+  const String keyIdBra = 'IdBra';
+  const String keyTitolo = 'Titolo';
+  const String keyAutore = 'Autore';
+  const String keyStrumento = 'strumento'; // Occhio al case
+  const String keyVolume = 'Volume';
+  const String keyPercRadice = 'PercRadice';
+  const String keyPercResto = 'PercResto';
+  const String keyArchivioProvenienza = 'ArchivioProvenienza';
+  const String keyTipoMulti = 'TipoMulti';
+  const String keyPrimoLink = 'PrimoLink'; // Corrisponde al CSV? O era PrimoLink?
+  const String keyNumPag = 'NumPag';
+  const String keyTipoDocu = 'TipoDocu';
+  const String keyNumOrig = 'NumOrig';
+  const String keyIdVolume = 'IdVolume';
+  const String keyIdAutore = 'IdAutore';
 
   // DA AGGIUNGERE SE SERVONO E SE ESISTONO NEL CSV:
   // static const String keyPercRadice = 'PercRadice';
@@ -195,24 +195,24 @@ class _CsvViewerScreenState extends State<CsvViewerScreen> {
   @override
   void initState() {
     super.initState();
-    _filterControllers = [
-      _titoloFilterController,
+    filterControllers = [
+      titoloFilterController,
       _archivioFilterController, // Assicurati di averli dichiarati tutti
       _volumeFilterController,
       _strumentoFilterController,
       _TipoMultiFilterController,
-      _autoreFilterController,
+      autoreFilterController,
     ];
-    for (var controller in _filterControllers) {
-      controller.addListener(_applyFiltersAndSort);
+    for (var controller in filterControllers) {
+      controller.addListener(applyFiltersAndSort);
     }
-    _loadAllDataSources(); // Chiamata per caricare i dati all'inizio
+    loadAllDataSources(); // Chiamata per caricare i dati all'inizio
   }
 
   @override
   void dispose() {
-    for (var controller in _filterControllers) {
-      controller.removeListener(_applyFiltersAndSort);
+    for (var controller in filterControllers) {
+      controller.removeListener(applyFiltersAndSort);
       controller.dispose();
     }
     super.dispose();
@@ -228,12 +228,12 @@ class _CsvViewerScreenState extends State<CsvViewerScreen> {
   // >>> _getCellValue NON SERVE PIU' direttamente qui se i factory di Brano gestiscono l'accesso
 
   // Esempio di _loadAllDataSources (come fornito prima)
-  Future<void> _loadAllDataSources() async {
+  Future<void> loadAllDataSources() async {
     // ... (codice come prima) ...
   }
 
   // Esempio di _loadBraniFromCsv (come fornito prima)
-  Future<List<Brano>> _loadBraniFromCsv() async {
+  Future<List<Brano>> loadBraniFromCsv() async {
     // ... (codice come prima, assicurati di usare FilePicker o un altro metodo per ottenere il CSV) ...
     // ... e che chiami Brano.fromCsvRow con i parametri corretti (columnIndexMap, csvHeaders, _csvHasHeaders)
     List<Brano> brani = [];
@@ -257,13 +257,14 @@ class _CsvViewerScreenState extends State<CsvViewerScreen> {
     return brani;
   }
 
-  Map<String, int> _createColumnIndexMap(List<String> headers) {
+  Map<String, int> createColumnIndexMap(List<String> headers) {
     final Map<String, int> map = {};
     for (int i = 0; i < headers.length; i++) {
       String headerFromFile = headers[i].toString().trim().toLowerCase();
       // Mappa TUTTE le chiavi che ti servono dal CSV
-      if (headerFromFile == keyIdBra.toLowerCase()) map[keyIdBra] = i;
-      else if (headerFromFile == keyTitolo.toLowerCase()) map[keyTitolo] = i;
+      if (headerFromFile == keyIdBra.toLowerCase()) {
+        map[keyIdBra] = i;
+      } else if (headerFromFile == keyTitolo.toLowerCase()) map[keyTitolo] = i;
       // ... e così via per TUTTE le costanti 'key...'
       // else if (headerFromFile == keyPercRadice.toLowerCase()) map[keyPercRadice] = i; // Esempio
     }
@@ -271,20 +272,20 @@ class _CsvViewerScreenState extends State<CsvViewerScreen> {
     return map;
   }
 
-  Future<List<Brano>> _loadBraniFromSqlite() async {
+  Future<List<Brano>> loadBraniFromSqlite() async {
     // ... (codice come prima, con la tua logica di accesso a SQLite) ...
     print("TODO: Implementare _loadBraniFromSqlite in _CsvViewerScreenState");
     return []; // Placeholder
   }
 
-  List<Brano> _unisciEDeduplica(List<Brano> lista1, List<Brano> lista2) {
+  List<Brano> unisciEDeduplica(List<Brano> lista1, List<Brano> lista2) {
     // ... (codice come prima) ...
     Map<String, Brano> mappaUnica = {};
     // ...
     return mappaUnica.values.toList();
   }
 
-  void _applyFiltersAndSort() {
+  void applyFiltersAndSort() {
     // ... (codice come prima, ma ora opera su List<Brano> e accede alle proprietà degli oggetti Brano) ...
     // Esempio per il filtro titolo:
     // bool titoloMatch = titoloQuery.isEmpty || brano.titolo.toLowerCase().contains(titoloQuery);
@@ -292,8 +293,8 @@ class _CsvViewerScreenState extends State<CsvViewerScreen> {
     // int compareTitolo = a.titolo.toLowerCase().compareTo(b.titolo.toLowerCase());
     print("TODO: Implementare _applyFiltersAndSort per operare su List<Brano>");
     setState(() {
-      _braniFiltrati = _tuttiIBani.where((brano) => true).toList(); // Placeholder, applica filtri reali
-      _braniFiltrati.sort((a,b)=> a.titolo.compareTo(b.titolo)); // Placeholder, applica sort reale
+      braniFiltrati = tuttiIBani.where((brano) => true).toList(); // Placeholder, applica filtri reali
+      braniFiltrati.sort((a,b)=> a.titolo.compareTo(b.titolo)); // Placeholder, applica sort reale
     });
   }
 
@@ -312,16 +313,16 @@ class _CsvViewerScreenState extends State<CsvViewerScreen> {
           // ... e gli altri ...
           // ElevatedButton(onPressed: (){ for(var c in _filterControllers) c.clear(); }, child: Text("Resetta")),
 
-          if (_isLoading)
+          if (isLoading)
             CircularProgressIndicator()
-          else if (_braniFiltrati.isEmpty)
+          else if (braniFiltrati.isEmpty)
             Center(child: Text('Nessun brano da visualizzare o caricare i dati.'))
           else
             Expanded(
               child: ListView.builder(
-                itemCount: _braniFiltrati.length,
+                itemCount: braniFiltrati.length,
                 itemBuilder: (context, index) {
-                  final brano = _braniFiltrati[index];
+                  final brano = braniFiltrati[index];
                   return ListTile(
                     title: Text(brano.titolo.isNotEmpty ? brano.titolo : "N/D"),
                     subtitle: Text("Autore: ${brano.autore} - Strumento: ${brano.strumento}"),
@@ -332,7 +333,7 @@ class _CsvViewerScreenState extends State<CsvViewerScreen> {
                       print('Apri PDF: ${brano.percorsoCompletoPdf} a pagina ${brano.NumPag}');
                       // Chiama la tua funzione per aprire il PDF (es. _apriPdfDialog)
                       // passando le informazioni necessarie dall'oggetto 'brano'.
-                      _mostraDialogDettagliEApertura(context, brano);
+                      mostraDialogDettagliEApertura(context, brano);
                     },
                   );
                 },
@@ -355,7 +356,7 @@ class _CsvViewerScreenState extends State<CsvViewerScreen> {
 
   // >>> INSERISCI QUI la funzione _mostraDialogDettagliEApertura (o come l'hai chiamata)
   // Questa funzione ora riceverà un oggetto Brano
-  void _mostraDialogDettagliEApertura(BuildContext context, Brano brano) {
+  void mostraDialogDettagliEApertura(BuildContext context, Brano brano) {
     // Il path da aprire ora viene da brano.percorsoCompletoPdf
     String percorsoPdfDaAprireNelDialogo = brano.percorsoCompletoPdf;
     String paginaDaAprire = brano.NumPag;

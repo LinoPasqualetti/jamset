@@ -2,8 +2,8 @@
 import 'package:flutter/material.dart';
 import 'package:jamset/screens/csv_viewer_screen.dart';
 import 'package:jamset/screens/gestione_variazioni_screen.dart';
-import 'dart:io' show Platform; // Importa solo 'Platform' da dart:io
-import 'package:flutter/foundation.dart' show kIsWeb; // Per kIsWeb
+// Importa solo 'Platform' da dart:io
+// Per kIsWeb
 
 class MainScreen extends StatelessWidget {
   const MainScreen({super.key});
@@ -69,7 +69,7 @@ class MainScreen extends StatelessWidget {
                     onPressed: () {
                       Navigator.push(
                         context,
-                        MaterialPageRoute(builder: (context) => const CsvViewerScreen()),
+                        MaterialPageRoute(builder: (context) => CsvViewerScreen()),
                       );
                     },
                   ),
