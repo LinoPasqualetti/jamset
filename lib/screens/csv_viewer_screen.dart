@@ -285,7 +285,7 @@ class _CsvViewerScreenState extends State<CsvViewerScreen>
                         filePath: percorsoDelFile,
                         page: int.tryParse(SelNumPag) ?? 1,
                       );
-                      Navigator.of(dialogContext).pop(); // Close main dialog
+                     // Navigator.of(dialogContext).pop(); // Close main dialog
                     },
                     inCasoDiFallimento: (percorsoTentato) {
                       Navigator.of(context, rootNavigator: true).pop(); // Close loading
