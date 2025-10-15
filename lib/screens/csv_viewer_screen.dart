@@ -12,7 +12,8 @@ import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 import 'package:jamset/platform/opener_platform_interface.dart';
 import 'package:permission_handler/permission_handler.dart'; // Importa permission_handler
-
+import 'package:speech_to_text/speech_to_text.dart';
+import 'package:speech_to_text/speech_recognition_result.dart';
 /// A screen that allows users to view and filter data from a CSV file.
 ///
 /// Users can load a CSV file from their device, filter its content based on
@@ -30,11 +31,15 @@ class CsvViewerScreen extends StatefulWidget {
 /// This class manages the state of the CSV viewer, including the loaded CSV data,
 /// filtering logic, and UI rendering.
 class _CsvViewerScreenState extends State<CsvViewerScreen>
-{
+  with AutomaticKeepAliveClientMixin<CsvViewerScreen> { // <--- MODIFICA 1
+
   // Keys for storing base PDF paths in shared preferences.
   static const String _windowsBasePathKey = 'base_pdf_path_windows';
   static const String _mobileBasePathKey = 'base_pdf_path_mobile';
-
+// Aggiungi queste variabili all'inizio della classe _CsvViewerScreenState
+  final SpeechToText _speechToText = SpeechToText();
+  bool _speechEnabled = false;
+  String _lastWords = '';
   /// The base path for PDF files, loaded from shared preferences.
   String? _basePdfPath;
 
@@ -81,12 +86,49 @@ class _CsvViewerScreenState extends State<CsvViewerScreen>
 
   /// The headers from the CSV file.
   List<String> _csvHeaders = [];
-
-  @override
-  void initState() {
+// Aggiungi questo metodo nella classe, ad esempio dopo il costruttore
+  // SOSTITUISCI ENTRAMBI I VECCHI initState CON QUESTO UNICO BLOCCO
+  @override    void initState() {
     super.initState();
-    _requestStoragePermission(); // Richiedi i permessi all'avvio della schermata
+    // Chiamiamo tutti i metodi di inizializzazione necessari qui
+    _initSpeech();                 // Inizializza il riconoscimento vocale
+    _requestStoragePermission();   // Richiedi i permessi per lo storage
+    _loadPreferences();            // Carica le preferenze salvate (importante aggiungerlo qui!)
   }
+
+
+  /// Inizializza il motore di riconoscimento vocale
+  void _initSpeech() async {
+    _speechEnabled = await _speechToText.initialize();
+    setState(() {});
+  }
+
+  /// Gestisce l'inizio dell'ascolto
+// Metodo _startListening aggiornato
+  void _startListening() async {
+    await _speechToText.listen(
+      onResult: (result) => _onSpeechResult(result.recognizedWords), // <-- Usa result.recognizedWords
+      localeId: 'it_IT', // Opzionale: specifica la lingua italiana
+    );
+    setState(() {});
+  }
+
+  /// Gestisce la fine dell'ascolto
+  void _stopListening() async {
+    await _speechToText.stop();
+    setState(() {});
+  }
+
+  /// Callback che viene chiamata quando viene riconosciuto del parlato
+// NUOVO CODICE - COMPATIBILE CON speech_to_text 7.x
+  void _onSpeechResult(String result) { // <-- La modifica chiave è qui!
+    setState(() {
+      _lastWords = result;
+      _cercaTitoloController.text = _lastWords;
+    });
+  }
+
+
 
   @override
   void dispose() {
@@ -98,6 +140,69 @@ class _CsvViewerScreenState extends State<CsvViewerScreen>
     _cercaStrumentoController.dispose();
     super.dispose();
   }
+
+
+  // --- MODIFICA FONDAMENTALE N°2 ---
+  // Dice a Flutter di mantenere questo stato in memoria.
+  @override
+  bool get wantKeepAlive => true;
+  // ---------------------------------
+
+  // AGGIUNGI QUESTO METODO ALL'INTERNO DELLA TUA CLASSE _CsvViewerScreenState
+
+  Future<void> _showAdvancedFiltersDialog() async {
+    return showDialog<void>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Filtri Avanzati'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                TextField(controller: _cercaAutoreController, decoration: const InputDecoration(labelText: 'Autore', isDense: true)),
+                const SizedBox(height: 8),
+                TextField(controller: _cercaProvenienzaController, decoration: const InputDecoration(labelText: 'Provenienza', isDense: true)),
+                const SizedBox(height: 8),
+                TextField(controller: _cercaVolumeController, decoration: const InputDecoration(labelText: 'Volume', isDense: true)),
+                const SizedBox(height: 8),
+                TextField(controller: _cercaTipoMultiController, decoration: const InputDecoration(labelText: 'TipoMulti', isDense: true)),
+                const SizedBox(height: 8),
+                TextField(controller: _cercaStrumentoController, decoration: const InputDecoration(labelText: 'Strumento', isDense: true)),
+              ],
+            ),
+          ),
+          actions: <Widget>[
+            TextButton(
+              child: const Text('Annulla'),
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+            ),
+            ElevatedButton(
+              child: const Text('Applica'),
+              onPressed: () {
+                // Aggiorna le query e filtra
+                setState(() {
+                  _queryAutore = _cercaAutoreController.text.toLowerCase();
+                  _queryProvenienza = _cercaProvenienzaController.text.toLowerCase();
+                  _queryVolume = _cercaVolumeController.text.toLowerCase();
+                  _queryTipoMulti = _cercaTipoMultiController.text.toLowerCase();
+                  _queryStrumento = _cercaStrumentoController.text.toLowerCase();
+                });
+                _filterData();
+                Navigator.of(context).pop();
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+// ORA VIENE IL TUO METODO build()
+
+//...
 
   /// Richiede i permessi per accedere allo storage esterno su Android.
   Future<void> _requestStoragePermission() async {
@@ -519,70 +624,126 @@ class _CsvViewerScreenState extends State<CsvViewerScreen>
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      children: <Widget>[
-        Positioned.fill(
-          child: Image.asset('assets/images/SherlockCerca2.png', fit: BoxFit.cover),
-        ),
-        Scaffold(
-          backgroundColor: Colors.transparent,
-          appBar: AppBar(
-            title: Text('Spartiti Visualizzatore $Laricerca'),
-            bottom: PreferredSize(
-              preferredSize: const Size.fromHeight(180.0),
-              child: Padding(
-                padding: const EdgeInsets.all(8.0),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
+    // --- MODIFICA FONDAMENTALE N°3 ---
+    // Registra questo widget per la conservazione dello stato.
+    super.build(context);
+    // ---------------------------------
+    return Scaffold(
+      // Rimuoviamo il backgroundColor: Colors.transparent dal Scaffold,
+      // perché lo sfondo sarà gestito dal body.
+      appBar: AppBar(
+        title: Text('Spartiti Visualizzatore $Laricerca'),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(110.0),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16.0, 8.0, 16.0, 12.0), // Aggiunto un po' di padding sopra
+            child: Column(
+              // --- MODIFICA FONDAMENTALE ---
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              // --------------------------
+              children: [
+                // 1. RIGA SUPERIORE CON TITOLO, MICROFONO E FILTRI
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
-                    // Filters...
-                    Row(
-                      children: [
-                        Expanded(child: TextField(controller: _cercaTitoloController, decoration: const InputDecoration(labelText: 'Titolo'))),
-                        const SizedBox(width: 8),
-                        Expanded(child: TextField(controller: _cercaAutoreController, decoration: const InputDecoration(labelText: 'Autore'))),
-                      ],
+                    Expanded(
+                      child: TextField(
+                        controller: _cercaTitoloController,
+                        decoration: const InputDecoration(labelText: 'Titolo', isDense: true),
+                        onSubmitted: (_) {
+                          setState(() { _queryTitolo = _cercaTitoloController.text.toLowerCase(); });
+                          _filterData();
+                        },
+                      ),
                     ),
-                    Row(
-                      children: [
-                        Expanded(child: TextField(controller: _cercaProvenienzaController, decoration: const InputDecoration(labelText: 'Provenienza'))),
-                        const SizedBox(width: 8),
-                        Expanded(child: TextField(controller: _cercaVolumeController, decoration: const InputDecoration(labelText: 'Volume'))),
-                      ],
+                    IconButton(
+                      icon: Icon(
+                        _speechToText.isListening ? Icons.mic_off : Icons.mic,
+                        color: Colors.black, // <-- AGGIUNGI QUESTO COLORE
+                      ),
+                      tooltip: 'Ricerca Vocale',
+                      onPressed: !_speechEnabled ? null : (_speechToText.isNotListening ? _startListening : _stopListening),
                     ),
-                    Row(
-                      children: [
-                        Expanded(child: TextField(controller: _cercaTipoMultiController, decoration: const InputDecoration(labelText: 'TipoMulti'))),
-                        const SizedBox(width: 8),
-                        Expanded(child: TextField(controller: _cercaStrumentoController, decoration: const InputDecoration(labelText: 'Strumento'))),
-                      ],
+                    // Pulsante Filtri Avanzati
+                    IconButton(
+                      icon: const Icon(
+                        Icons.filter_list_alt,
+                        color: Colors.blue, // <-- AGGIUNGI QUESTO COLORE
+                      ),
+                      tooltip: 'Filtri Avanzati',
+                      onPressed: _showAdvancedFiltersDialog,
                     ),
-                    ElevatedButton.icon(
-                      icon: const Icon(Icons.search),
-                      label: const Text('Filtra'),
-                      onPressed: () {
+                  ],
+                ),
+
+                // --- SPACER RIMOSSO ---
+
+                // 2. BOTTONE "FILTRA" PRINCIPALE
+                SizedBox( // Avvolgiamo il bottone in un SizedBox per dargli una larghezza
+                  width: double.infinity, // Occupa tutta la larghezza
+                  child: ElevatedButton.icon(
+                    icon: const Icon(Icons.search),
+                    label: const Text('Filtra'),
+                    onPressed: () {
+                      setState(() {
                         _queryTitolo = _cercaTitoloController.text.toLowerCase();
                         _queryAutore = _cercaAutoreController.text.toLowerCase();
                         _queryProvenienza = _cercaProvenienzaController.text.toLowerCase();
                         _queryVolume = _cercaVolumeController.text.toLowerCase();
                         _queryTipoMulti = _cercaTipoMultiController.text.toLowerCase();
                         _queryStrumento = _cercaStrumentoController.text.toLowerCase();
-                        _filterData();
-                      },
-                    ),
-                  ],
+                      });
+                      if (_queryTitolo.isEmpty && _queryAutore.isEmpty && _queryProvenienza.isEmpty
+                          && _queryVolume.isEmpty && _queryTipoMulti.isEmpty && _queryStrumento.isEmpty)
+                      { // <--- AGGIUNTO _queryProvenienza
+                        print('Nessun filtro  applicato.');
+                      } else
+                      { Laricerca = "Applicato filtro su:";
+                      if (_queryTitolo.isNotEmpty) {  Laricerca += " Titolo   $_queryTitolo -";}
+                      if (_queryAutore.isNotEmpty) { Laricerca += " Autore   $_queryAutore - ";}
+                      if (_queryProvenienza.isNotEmpty) { Laricerca += " Provenienza $_queryProvenienza - ";}
+                      if (_queryVolume.isNotEmpty) { Laricerca += " Volume $_queryVolume - " ;}
+                      if (_queryTipoMulti.isNotEmpty) { Laricerca += " TipoMulti $_queryTipoMulti - ";}
+                      if (_queryStrumento.isNotEmpty) { Laricerca += " Strumento $_queryStrumento - ";}
+                      }
+                      _filterData();
+                    },
+                  ),
                 ),
-              ),
+              ],
             ),
           ),
-          body: _csvData.isEmpty ? _buildEmptyState() : _buildCsvList(),
-          floatingActionButton: FloatingActionButton.extended(
-            onPressed: _pickAndLoadCsv,
-            label: const Text('Nuovo CSV'),
-            icon: const Icon(Icons.file_upload),
+        ),
+      ),
+
+      // --- INIZIO DELLA MODIFICA FONDAMENTALE ---
+      body: SafeArea( // 1. AVVOLGIAMO IL BODY CON SAFEAREA
+        child: Stack( // 2. LO STACK ORA È DENTRO SAFEAREA
+          fit: StackFit.expand, // 3. DICIAMO ALLO STACK DI ESPANDERSI PER RIEMPIRE L'AREA SICURA
+          children: <Widget>
+        [
+// Immagine di Sfondo dentro un Container centrato
+        Center( // <-- WIDGET
+        child: Container( // <-- WIDGET AGGIUNTO PER DIMENSIONARE
+          width: 300,  // Larghezza desiderata
+          height: 400, // Altezza desiderata
+          child: Image.asset(
+            'assets/images/SherlockInBibliotecaAllaPicasso.jpg',
+            fit: BoxFit.cover,
           ),
         ),
+      ),
+// Contenuto sopra l'immagine
+      _csvData.isEmpty ? _buildEmptyState() : _buildCsvList(),
       ],
+        ),
+      ),
+      // --- FINE DELLA MODIFICA ---
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _pickAndLoadCsv,
+        label: const Text('Nuovo CSV'),
+        icon: const Icon(Icons.file_upload),
+      ),
     );
   }
 
@@ -604,37 +765,147 @@ class _CsvViewerScreenState extends State<CsvViewerScreen>
   }
 
   /// Builds the list view to display the filtered CSV data.
+  /// Builds the list view to display the filtered CSV data.
   Widget _buildCsvList() {
-    return ListView.builder(
-      itemCount: _filteredCsvData.length,
-      itemBuilder: (context, index) {
-        final row = _filteredCsvData[index];
-        final titolo = _getCellValue(row, 'Titolo');
-        final volume = _getCellValue(row, 'Volume');
-        final numPag = _getCellValue(row, 'NumPag');
-        final numOrig = _getCellValue(row, 'NumOrig');
-        final idBra = _getCellValue(row, 'IdBra');
-        final tipoMulti = _getCellValue(row, 'TipoMulti');
-        final tipoDocu = _getCellValue(row, 'TipoDocu');
-        final strumento = _getCellValue(row, 'strumento');
-        final provenienza = _getCellValue(row, 'ArchivioProvenienza');
-        final link = _getCellValue(row, 'PrimoLink');
+    return Container(
+      color: Colors.grey[200],
+      child: ListView.builder(
+        itemCount: _filteredCsvData.length,
+        itemBuilder: (context, index) {
+          final row = _filteredCsvData[index];
 
-        return Card(
-          child: ListTile(
-            title: Text(titolo),
-            subtitle: Text('Volume: $volume - Pag: $numPag'),
-            trailing: IconButton(
-              icon: const Icon(Icons.picture_as_pdf, color: Colors.red),
-              onPressed: () => _handleOpenPdfAction(
-                titolo: titolo, volume: volume, NumPag: numPag, NumOrig: numOrig,
-                idBra: idBra, TipoMulti: tipoMulti, TipoDocu: tipoDocu,
-                strumento: strumento, Provenienza: provenienza, link: link,
+          final titolo = _getCellValue(row, 'Titolo');
+          final strumento = _getCellValue(row, 'strumento');
+          final volume = _getCellValue(row, 'Volume');
+          final numPag = _getCellValue(row, 'NumPag');
+          final provenienza = _getCellValue(row, 'ArchivioProvenienza');
+          final tipoMulti = _getCellValue(row, 'TipoMulti');
+
+          bool showTitleHeader = false;
+          if (index == 0) {
+            showTitleHeader = true;
+          } else {
+            final previousRow = _filteredCsvData[index - 1];
+            final String currentTitleClean = titolo.trim().toLowerCase();
+            final String previousTitleClean = _getCellValue(previousRow, 'Titolo').trim().toLowerCase();
+            if (currentTitleClean != previousTitleClean) {
+              showTitleHeader = true;
+            }
+          }
+
+          final strumentoListTile = ListTile(
+            dense: true,
+            tileColor: Colors.white,
+            title: RichText(
+              overflow: TextOverflow.ellipsis,
+              text: TextSpan(
+                style: DefaultTextStyle.of(context).style,
+                children: <TextSpan>[
+                  if (strumento.isNotEmpty)
+                    TextSpan(
+                      text: '$strumento ',
+                      style: const TextStyle(color: Colors.green),
+                    ),
+                  if (numPag.isNotEmpty)
+                    TextSpan(
+                      text: 'Pag: $numPag del ',
+                      style: const TextStyle(color: Colors.black, fontStyle: FontStyle.italic),
+                    ),
+                  if (volume.isNotEmpty)
+                    TextSpan(
+                      text: 'Vol: $volume ',
+                      style: const TextStyle(
+                        color: Colors.blue,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  if (provenienza.isNotEmpty)
+                    TextSpan(text: '($provenienza) ',
+          style: const TextStyle(color: Colors.redAccent),
+                    ),
+                  if (tipoMulti.isNotEmpty) TextSpan(text: '$tipoMulti '),
+                ],
               ),
             ),
-          ),
-        );
-      },
+            trailing: IconButton(
+              icon: const Icon(Icons.picture_as_pdf, color: Colors.red),
+              tooltip: 'Apri PDF',
+              onPressed: () {
+                final numOrig = _getCellValue(row, 'NumOrig');
+                final idBra = _getCellValue(row, 'IdBra');
+                final tipoDocu = _getCellValue(row, 'TipoDocu');
+                final link = _getCellValue(row, 'PrimoLink');
+
+                _handleOpenPdfAction(
+                  titolo: titolo, volume: volume, NumPag: numPag,
+                  NumOrig: numOrig, idBra: idBra, TipoMulti: tipoMulti,
+                  TipoDocu: tipoDocu, strumento: strumento,
+                  Provenienza: provenienza, link: link,
+                );
+              },
+            ),
+          );
+
+          if (showTitleHeader) {
+            return Card(
+              margin: const EdgeInsets.fromLTRB(8.0, 8.0, 8.0, 0),
+              elevation: 4.0,
+              clipBehavior: Clip.antiAlias,
+              shape: const RoundedRectangleBorder(
+                borderRadius: BorderRadius.only(
+                  topLeft: Radius.circular(8.0),
+                  topRight: Radius.circular(8.0),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: double.infinity,
+                    color: Colors.blueGrey,
+                    padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
+                    child: Text(
+                      titolo.trim(),
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.black,
+                      ),
+                    ),
+                  ),
+                  // --- MODIFICA 1: Usiamo un Divider per coerenza ---
+                  // Invece di Divider(height: 0), che è invisibile,
+                  // usiamo un Divider con altezza 1 per disegnare la linea.
+                  const Divider(height: 1, thickness: 1, color: Colors.grey),
+                  // ----------------------------------------------------
+                  strumentoListTile,
+                ],
+              ),
+            );
+          } else {
+            return Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8.0),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  border: Border(
+                    // --- MODIFICA 2: Aggiungiamo un BORDO SUPERIORE ---
+                    top: BorderSide(color: Colors.grey[300]!, width: 1.0), // Linea di separazione superiore
+                    // --------------------------------------------------
+                    left: BorderSide(color: Colors.grey[400]!, width: 1.0),
+                    right: BorderSide(color: Colors.grey[400]!, width: 1.0),
+                    bottom: BorderSide(color: Colors.grey[400]!, width: 1.0),
+                  ),
+                ),
+                child: strumentoListTile,
+              ),
+            );
+          }
+        },
+      ),
     );
   }
+
+
+
 }

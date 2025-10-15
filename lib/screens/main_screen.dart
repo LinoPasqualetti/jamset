@@ -1,58 +1,109 @@
-// lib/screens/main_screen.dart
 import 'package:flutter/material.dart';
 import 'package:jamset/screens/csv_viewer_screen.dart';
 import 'package:jamset/screens/gestione_variazioni_screen.dart';
-// Importa solo 'Platform' da dart:io
-// Per kIsWeb
 
-class MainScreen extends StatelessWidget {
+// 1. Trasformiamo MainScreen in uno StatefulWidget per poter gestire lo stato
+class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
 
   @override
+  _MainScreenState createState() => _MainScreenState();
+}
+
+class _MainScreenState extends State<MainScreen> {
+  // 2. Teniamo traccia di quale "pagina" mostrare
+  int _selectedIndex = 0; // 0 per la Home, 1 per la Ricerca, 2 per la Gestione
+
+  // 3. Creiamo le istanze delle nostre pagine UNA SOLA VOLTA.
+  //    Questo è il segreto per mantenere lo stato.
+  static const List<Widget> _widgetOptions = <Widget>[
+    // Indice 0: La tua Home Page, la mettiamo in un widget separato per pulizia
+    _HomePage(),
+    // Indice 1: La schermata di ricerca, che manterrà il suo stato
+    CsvViewerScreen(),
+    // Indice 2: La schermata di gestione, che manterrà il suo stato
+    GestioneVariazioniScreen(),
+  ];
+
+  void _navigateTo(int index) {
+    setState(() {
+      _selectedIndex = index;
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
+    // La nostra MainScreen ora è un "contenitore" che usa IndexedStack
+    return Scaffold(
+      body: IndexedStack(
+        index: _selectedIndex,
+        children: _widgetOptions,
+      ),
+      // 4. Aggiungiamo una BottomNavigationBar per navigare tra le sezioni
+      bottomNavigationBar: BottomNavigationBar(
+        items: const <BottomNavigationBarItem>[
+          BottomNavigationBarItem(
+            icon: Icon(Icons.home),
+            label: 'Home',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.search),
+            label: 'Ricerca CSV',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.settings),
+            label: 'Gestione',
+          ),
+        ],
+        currentIndex: _selectedIndex,
+        onTap: _navigateTo,
+      ),
+    );
+  }
+}
+
+// 5. Creiamo un widget privato per contenere la UI della tua Home Page originale.
+//    Questo widget non ha più bisogno di usare Navigator.push.
+class _HomePage extends StatelessWidget {
+  const _HomePage();
+
+  @override
+  Widget build(BuildContext context) {
+    // Per chiamare la funzione _navigateTo del genitore, usiamo questo trucco
+    final parentState = context.findAncestorStateOfType<_MainScreenState>()!;
 
     return Scaffold(
-      // Rimuoviamo il backgroundColor dallo Scaffold se l'immagine deve coprire tutto
-      // backgroundColor: Colors.blueGrey[100], (Rimosso o commentato)
       appBar: AppBar(
-        title: const Text('JamSet App di gestione e ricerca di spartiti musicali - Home Page '),
+        title: const Text('JamSet - Ricerca Home Page'),
         backgroundColor: Colors.blueGrey[700],
-        foregroundColor: Colors.yellowAccent ,
-        //centerTitle: ,
-        elevation: 0, // Opzionale: rimuove l'ombra dell'AppBar se preferisci un look più piatto con lo sfondo
+        foregroundColor: Colors.yellowAccent,
+        elevation: 0,
       ),
-      body: Stack( // Usiamo Stack per sovrapporre l'immagine e il contenuto
+      drawer: Drawer(
+        // ... il tuo drawer rimane invariato ...
+      ),
+      body: Stack(
         children: <Widget>[
-          // 1. Immagine di Sfondo
-          Positioned.fill( // Fa sì che l'immagine riempia tutto lo spazio disponibile dello Stack
+          Positioned.fill(
             child: Image.asset(
-              'assets/images/SfondoLibriRBeAeb2.jpg', // <<< SOSTITUISCI CON IL TUO PERCORSO IMMAGINE
-              fit: BoxFit.cover, // Copre l'intero spazio, tagliando se necessario
-              // Altre opzioni per 'fit':  // BoxFit.contain: Mostra tutta l'immagine, potrebbe lasciare spazi vuoti
-              // BoxFit.fill: Stira l'immagine per riempire, potrebbe distorcerla   // BoxFit.fitWidth: Riempie la larghezza, potrebbe tagliare verticalmente
-              // BoxFit.fitHeight: Riempie l'altezza, potrebbe tagliare orizzontalmente  // BoxFit.scaleDown: Mostra l'immagine alla sua dimensione originale se più piccola, altrimenti come BoxFit.contain
+              'assets/images/SfondoLibriRBeAebCubista.jpg',
+              fit: BoxFit.cover,
             ),
           ),
-
-          // 2. Contenuto Originale della Schermata (Centrato)
-          // Potrebbe essere necessario avvolgere il contenuto in un Container
-          // per applicare un colore di sfondo semi-trasparente sopra l'immagine,
-          // se il testo non è leggibile.
           Center(
             child: Padding(
               padding: const EdgeInsets.all(16.0),
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: <Widget>[
                   const Text(
                     'Benvenuto in JamSet!',
                     textAlign: TextAlign.center,
                     style: TextStyle(
-                      fontSize: 28, // Leggermente più grande per leggibilità
+                      fontSize: 34,
                       fontWeight: FontWeight.bold,
-                      color: Colors.white, // Cambia colore per contrasto con l'immagine
-
+                      color: Colors.white,
                     ),
                   ),
                   const SizedBox(height: 40),
@@ -60,17 +111,12 @@ class MainScreen extends StatelessWidget {
                     icon: const Icon(Icons.search_outlined),
                     label: const Text('Ricerca e Prospettazione Brani (CSV)'),
                     style: ElevatedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 15),
+                      padding: const EdgeInsets.symmetric(vertical: 15, horizontal: 20),
                       textStyle: const TextStyle(fontSize: 16),
-                      // Potresti voler rendere i bottoni leggermente trasparenti
-                      // o cambiare il loro colore per adattarsi meglio allo sfondo.
-                      // Esempio: backgroundColor: Colors.black.withOpacity(0.5),
                     ),
                     onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (context) => CsvViewerScreen()),
-                      );
+                      // ORA: dice al genitore di mostrare la pagina con indice 1
+                      parentState._navigateTo(1);
                     },
                   ),
                   const SizedBox(height: 20),
@@ -78,16 +124,14 @@ class MainScreen extends StatelessWidget {
                     icon: const Icon(Icons.edit_document),
                     label: const Text('Gestione Variazioni e Dati'),
                     style: ElevatedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 15),
+                      padding: const EdgeInsets.symmetric(vertical: 15, horizontal: 20),
                       textStyle: const TextStyle(fontSize: 16),
-                      backgroundColor: Colors.teal, // Mantieni o adatta questo colore
+                      backgroundColor: Colors.teal,
                       foregroundColor: Colors.white,
                     ),
                     onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (context) => const GestioneVariazioniScreen()),
-                      );
+                      // ORA: dice al genitore di mostrare la pagina con indice 2
+                      parentState._navigateTo(2);
                     },
                   ),
                 ],
