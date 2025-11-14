@@ -1,8 +1,16 @@
 // lib/main.dart
 import 'package:flutter/material.dart';
 import 'package:jamset/screens/main_screen.dart';
-import 'dart:io' show File, Platform;
+import 'dart:io' show Directory, File, Platform;
 import 'package:flutter/foundation.dart' show kDebugMode, kIsWeb;
+
+// --- IMPORT PER DATABASE ---
+import 'package:path/path.dart';
+import 'package:sqflite/sqflite.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+import 'package:flutter/services.dart' show ByteData, rootBundle;
+// ---------------------------
+
 import 'package:jamset/platform/opener_platform_interface.dart';
 import 'package:jamset/platform/android_opener.dart';
 import 'package:jamset/platform/windows_opener.dart';
@@ -10,91 +18,113 @@ import 'package:jamset/platform/windows_opener.dart';
 // Chiave globale per accedere al Navigator
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
-// Importa il tuo helper
 Map<String, String> appSystemConfig = {};
 
-void main() {
-  // --- Configurazione del lettore PDF per Windows ---
-  if (Platform.isWindows) {
-    // 1. Percorso di override specifico dell'utente (il tuo "Acrobat 9 Pro")
-    //    Modifica questa riga se sposti o cambi il tuo lettore PDF preferito.
-    const userSpecificViewerPath = r"C:\Program Files (x86)\Adobe\Acrobat 9.0\Acrobat\Acrobat.exe";
+// === VARIABILI GLOBALI PER I DATABASE (con nomi più chiari) ===
+Database? dbVecchio;
+Database? dbGlobale;
+Database? dbCatalogoAttivo; // <-- SOSTITUISCE dbJazz
+// =========================================================
 
-    // 2. Percorso di default (il comune "Acrobat Reader DC" gratuito)
-    const defaultViewerPath = r"C:\Program Files\Adobe\Acrobat Reader DC\Reader\AcroRd32.exe";
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
 
-    // 3. Logica di selezione: controlla se il file specificato dall'utente esiste.
-    if (File(userSpecificViewerPath).existsSync()) {
-      // Se esiste, usa il percorso dell'utente.
-      appSystemConfig['pdfViewerPath'] = userSpecificViewerPath;
-      if (kDebugMode) {
-        print("Lettore PDF personalizzato trovato: $userSpecificViewerPath");
-      }
-    } else {
-      // Altrimenti, usa il percorso di default.
-      appSystemConfig['pdfViewerPath'] = defaultViewerPath;
-      if (kDebugMode) {
-        print("Lettore PDF personalizzato non trovato. Uso il default: $defaultViewerPath");
-      }
-    }
+  if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+    sqfliteFfiInit();
+    databaseFactory = databaseFactoryFfi;
   }
 
-  // Inizializzazione specifica della piattaforma
-  if (kIsWeb) {
-    // Se avessi un'implementazione web, la imposteresti qui
-    // OpenerPlatformInterface.instance = WebOpener(); 
-  } else {
-    try {
-      if (Platform.isAndroid) {
-        OpenerPlatformInterface.instance = AndroidOpener();
-      } else if (Platform.isWindows) {
-        OpenerPlatformInterface.instance = WindowsOpener();
-      }
-      // Aggiungi altri 'else if' per altre piattaforme come iOS, Linux, MacOS se necessario
-    } catch (e) {
-      if (kDebugMode) {
-        print("Errore durante l'inizializzazione della piattaforma: $e");
-      }
-    }
-  }
-
-  // Rilevamento piattaforma
-  String platformType;
-  // platform
-
-  String osDetails = "";  if (kIsWeb) {
-    platformType = "Web";
-    osDetails = "Esecuzione in un browser web.";
-  } else {
-    platformType = "Nativa";
-    try {
-      if (Platform.isAndroid) {
-        osDetails = "Sistema Operativo: Android";
-      } else if (Platform.isIOS) {
-        osDetails = "Sistema Operativo: iOS";
-      } else if (Platform.isWindows) {
-        osDetails = "Sistema Operativo: Windows";
-      } else if (Platform.isLinux) {
-        osDetails = "Sistema Operativo: Linux";
-      } else if (Platform.isMacOS) {
-        osDetails = "Sistema Operativo: macOS";
+  try {
+    // Configurazione del lettore PDF per Windows
+    if (Platform.isWindows) {
+      const userSpecificViewerPath = r"C:\Program Files (x86)\Adobe\Acrobat 9.0\Acrobat\Acrobat.exe";
+      const defaultViewerPath = r"C:\Program Files\Adobe\Acrobat Reader DC\Reader\AcroRd32.exe";
+      if (File(userSpecificViewerPath).existsSync()) {
+        appSystemConfig['pdfViewerPath'] = userSpecificViewerPath;
       } else {
-        osDetails = "Sistema Operativo: Sconosciuto (Nativo)";
+        appSystemConfig['pdfViewerPath'] = defaultViewerPath;
       }
-    } catch (e) {
-      osDetails = "Errore nel rilevare OS nativo: $e";
     }
-  }
 
-  if (kDebugMode) {
-    print("===== INFORMAZIONI PIATTAFORMA APP =====");
-    print("Tipo di Piattaforma: $platformType");
-    print(osDetails);
-    print("========================================");
-  }
+    // --- INIZIALIZZAZIONE OPENER (blocco mancante) ---
+    if (!kIsWeb) {
+      try {
+        if (Platform.isAndroid) {
+          OpenerPlatformInterface.instance = AndroidOpener();
+        } else if (Platform.isWindows) {
+          OpenerPlatformInterface.instance = WindowsOpener();
+        }
+      } catch (e) {
+        if (kDebugMode) {
+          print("Errore durante l'inizializzazione della piattaforma: $e");
+        }
+      }
+    }
+    // --------------------------------------------------
 
-  // Esegui la tua app Flutter come al solito
-  runApp(const MyApp());
+    if (kDebugMode) {
+      // ... (stampa info piattaforma)
+    }
+
+    // --- APERTURA DEI DATABASE CON LOGICA DINAMICA ---
+    final dbDir = await getDatabasesPath();
+
+    // 1. Apertura VecchioDb.db (invariato)
+    final dbPathVecchio = join(dbDir, "VecchioDb.db");
+    if (!await File(dbPathVecchio).exists()) {
+      await Directory(dirname(dbPathVecchio)).create(recursive: true);
+      ByteData data = await rootBundle.load("assets/databases/VecchioDb.db");
+      List<int> bytes = data.buffer.asUint8List();
+      await File(dbPathVecchio).writeAsBytes(bytes, flush: true);
+    }
+    dbVecchio = await openDatabase(dbPathVecchio);
+    if (kDebugMode) print("Database VecchioDb.db aperto con successo.");
+
+    // 2. Apertura DBGlobale_seed.db (invariato)
+    final dbPathGlobale = join(dbDir, "DBGlobale_seed.db");
+    if (!await File(dbPathGlobale).exists()) {
+      await Directory(dirname(dbPathGlobale)).create(recursive: true);
+      ByteData data = await rootBundle.load("assets/databases/DBGlobale_seed.db");
+      List<int> bytes = data.buffer.asUint8List();
+      await File(dbPathGlobale).writeAsBytes(bytes, flush: true);
+    }
+    dbGlobale = await openDatabase(dbPathGlobale);
+    if (kDebugMode) print("Database DBGlobale_seed.db aperto con successo.");
+
+    // 3. APERTURA DINAMICA DEL CATALOGO ATTIVO
+    if (dbGlobale == null) {
+      throw Exception("Il database globale non è stato aperto. Impossibile determinare il catalogo attivo.");
+    }
+    
+    final List<Map<String, dynamic>> results = await dbGlobale!.rawQuery(
+        "select nome_file_db from elenco_cataloghi, datiSistremaApp where id=id_catalogo_attivo");
+
+    if (results.isEmpty || results.first['nome_file_db'] == null) {
+      throw Exception("Nessun catalogo attivo trovato nel database globale.");
+    }
+
+    final String catalogoDbName = results.first['nome_file_db'] as String;
+    if (kDebugMode) print("Catalogo attivo da caricare: $catalogoDbName");
+
+    final dbPathCatalogo = join(dbDir, catalogoDbName);
+    if (!await File(dbPathCatalogo).exists()) {
+      await Directory(dirname(dbPathCatalogo)).create(recursive: true);
+      ByteData data = await rootBundle.load("assets/databases/$catalogoDbName");
+      List<int> bytes = data.buffer.asUint8List();
+      await File(dbPathCatalogo).writeAsBytes(bytes, flush: true);
+    }
+    dbCatalogoAttivo = await openDatabase(dbPathCatalogo);
+    if (kDebugMode) print("Database catalogo '$catalogoDbName' aperto con successo.");
+    // --------------------------------
+
+    runApp(const MyApp());
+
+  } catch (e) {
+    if (kDebugMode) {
+      print("ERRORE CRITICO DI INIZIALIZZAZIONE: $e");
+    }
+    runApp(ErrorApp(error: e.toString()));
+  }
 }
 
 class MyApp extends StatelessWidget {
@@ -103,22 +133,35 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      navigatorKey: navigatorKey, // Assegna la chiave globale al Navigator
-      title: 'JamSet App', // O il titolo che preferisci
+      navigatorKey: navigatorKey,
+      title: 'JamSet App',
       theme: ThemeData(
-        // Il tuo tema personalizzato, se ne hai uno
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: Colors.blueGrey, // Usa il tuo colore principale come "seme"
-
-// Puoi anche sovrascrivere colori specifici se vuoi
-          primary: Colors.blueAccent, // Il colore primario per elementi come bottoni, appbar, ecc.
-          secondary: Colors.amber, // Un colore secondario (esempio)
-// ... e molti altri colori come surface, background, error, etc.
-        ),
-      ),
-      // LA MODIFICA CHIAVE È QUI:
-      // Imposta MainScreen come la prima schermata che l'utente vede
+          colorScheme: ColorScheme.fromSeed(seedColor: Colors.blueGrey, primary: Colors.blueAccent, secondary: Colors.amber)),
       home: const MainScreen(),
+    );
+  }
+}
+
+class ErrorApp extends StatelessWidget {
+  final String error;
+  const ErrorApp({super.key, required this.error});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      home: Scaffold(
+          backgroundColor: const Color(0xFFFFF0F0),
+          body: Center(
+            child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                  const Icon(Icons.error_outline, color: Colors.red, size: 60),
+                  const SizedBox(height: 20),
+                  const Text('Errore Critico all\'Avvio', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 10),
+                  SelectableText(error, textAlign: TextAlign.center),
+                ])),
+          )),
     );
   }
 }
