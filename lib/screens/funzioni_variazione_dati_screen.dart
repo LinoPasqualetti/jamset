@@ -4,6 +4,7 @@ import 'package:sqflite/sqflite.dart';
 import 'package:data_table_2/data_table_2.dart';
 
 import 'package:jamset/main.dart';
+import 'package:jamset/platform/opener_platform_interface.dart';
 
 class FunzioniVariazioneDatiScreen extends StatefulWidget {
   const FunzioniVariazioneDatiScreen({super.key});
@@ -19,7 +20,7 @@ class _FunzioniVariazioneDatiScreenState extends State<FunzioniVariazioneDatiScr
   String? _error;
   List<Map<String, dynamic>> _queryResults = [];
   List<String> _tableFields = [];
-  
+
   Duration? _dbQueryTime;
   Duration? _uiBuildTime;
 
@@ -49,15 +50,15 @@ order by titolo,strumento
   }
 
   Future<void> _loadTableInfo() async {
-    if (dbCatalogoAttivo == null) { // <-- CORREZIONE
+    if (dbCatalogoAttivo == null) {
       setState(() {
-        _error = "Database catalogo non disponibile. Controllare l\'errore all\'avvio.";
+        _error = "Database non disponibile. Controllare l\'errore all\'avvio.";
         _isLoading = false;
       });
       return;
     }
     try {
-      final tableInfo = await dbCatalogoAttivo!.rawQuery('PRAGMA table_info(spartiti);'); // <-- CORREZIONE
+      final tableInfo = await dbCatalogoAttivo!.rawQuery('PRAGMA table_info(spartiti);');
       final fields = tableInfo.map((row) => row['name'] as String).toList();
       if (mounted) {
         setState(() {
@@ -76,46 +77,80 @@ order by titolo,strumento
   }
 
   Future<void> _executeQuery() async {
-    if (dbCatalogoAttivo == null || _isQueryRunning) return; // <-- CORREZIONE
-    
-    setState(() { 
-      _isQueryRunning = true; 
-      _error = null; 
+    if (dbCatalogoAttivo == null || _isQueryRunning) return;
+
+    setState(() {
+      _isQueryRunning = true;
+      _error = null;
       _dbQueryTime = null;
       _uiBuildTime = null;
     });
-    
+
     try {
       final dbStopwatch = Stopwatch()..start();
-      final results = await dbCatalogoAttivo!.rawQuery(_sqlController.text); // <-- CORREZIONE
+      final results = await dbCatalogoAttivo!.rawQuery(_sqlController.text);
       dbStopwatch.stop();
 
       if (mounted) {
         final uiStopwatch = Stopwatch()..start();
-        setState(() { 
-          _queryResults = results; 
-          _isQueryRunning = false; 
+        setState(() {
+          _queryResults = results;
+          _isQueryRunning = false;
           _dbQueryTime = dbStopwatch.elapsed;
         });
-        
+
         WidgetsBinding.instance.addPostFrameCallback((_) {
-            uiStopwatch.stop();
-            if (mounted) {
-              setState(() {
-                _uiBuildTime = uiStopwatch.elapsed;
-              });
-            }
+          uiStopwatch.stop();
+          if (mounted) {
+            setState(() {
+              _uiBuildTime = uiStopwatch.elapsed;
+            });
+          }
         });
       }
     } catch (e) {
       if (mounted) {
-        setState(() { 
-          _error = "Errore esecuzione query: \n${e.toString()}"; 
-          _queryResults = []; 
-          _isQueryRunning = false; 
+        setState(() {
+          _error = "Errore esecuzione query: \n${e.toString()}";
+          _queryResults = [];
+          _isQueryRunning = false;
         });
       }
     }
+  }
+
+  // FIX: Resa la funzione case-insensitive per le chiavi della mappa.
+  Future<void> _openPdfFromRow(Map<String, dynamic> rowData) async {
+    // Normalizza le chiavi in minuscolo per una ricerca robusta.
+    final lowerCaseRowData = {for (var k in rowData.keys) k.toLowerCase(): rowData[k]};
+
+    if (!lowerCaseRowData.containsKey('perapertura') || !lowerCaseRowData.containsKey('numpag')) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('ERRORE: La query deve contenere le colonne "PerApertura" e "Numpag" per poter aprire il PDF.'),
+        backgroundColor: Colors.red,
+      ));
+      return;
+    }
+
+    final filePath = lowerCaseRowData['perapertura'] as String?;
+    final pageNum = lowerCaseRowData['numpag'];
+
+    if (filePath == null || filePath.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('ERRORE: Il percorso del file (PerApertura) è vuoto o nullo.'),
+        backgroundColor: Colors.red,
+      ));
+      return;
+    }
+
+    final page = int.tryParse(pageNum?.toString() ?? '1') ?? 1;
+
+    print('Richiesta apertura PDF da riga: $filePath a pagina $page');
+    await OpenerPlatformInterface.instance.openPdf(
+      context: context,
+      filePath: filePath,
+      page: page,
+    );
   }
 
   @override
@@ -125,8 +160,8 @@ order by titolo,strumento
     if (_isLoading) {
       return const Center(child: CircularProgressIndicator());
     }
-    if (_error != null && dbCatalogoAttivo == null) { // <-- CORREZIONE
-       return Center(child: SelectableText(_error!, style: const TextStyle(color: Colors.red)));
+    if (_error != null && dbCatalogoAttivo == null) {
+      return Center(child: SelectableText(_error!, style: const TextStyle(color: Colors.red)));
     }
 
     return Padding(
@@ -134,8 +169,8 @@ order by titolo,strumento
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-           const Text("Tabella attiva: spartiti", style: TextStyle(fontWeight: FontWeight.bold, fontStyle: FontStyle.italic)),
-           const SizedBox(height: 10),
+          const Text("Tabella attiva: spartiti", style: TextStyle(fontWeight: FontWeight.bold, fontStyle: FontStyle.italic)),
+          const SizedBox(height: 10),
           TextField(
             controller: _sqlController,
             maxLines: 5,
@@ -170,7 +205,7 @@ order by titolo,strumento
           ],
         ),
         const SizedBox(height: 8),
-        if (_dbQueryTime != null) 
+        if (_dbQueryTime != null)
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 4.0),
             child: Text(
@@ -235,7 +270,10 @@ order by titolo,strumento
         return DataColumn2(label: Text(key, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)), size: size);
       }).toList(),
       rows: _queryResults.map((row) {
-        return DataRow(cells: row.values.map((cell) => DataCell(SelectableText(cell?.toString() ?? 'NULL', style: const TextStyle(fontSize: 11)))).toList());
+        return DataRow2(
+          onTap: () => _openPdfFromRow(row),
+          cells: row.values.map((cell) => DataCell(SelectableText(cell?.toString() ?? 'NULL', style: const TextStyle(fontSize: 11)))).toList(),
+        );
       }).toList(),
     );
   }

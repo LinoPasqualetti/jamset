@@ -15,12 +15,6 @@ class WindowsOpener implements OpenerPlatformInterface {
     // Ottieni l'estensione del file in minuscolo.
     final fileExtension = p.extension(filePath).toLowerCase();
 
-    // --- DEBUG ---
-    print("--- DEBUG APERTURA FILE ---");
-    print("File: $filePath");
-    print("Estensione: $fileExtension");
-    print("---------------------------");
-
     try {
       if (fileExtension == '.pdf') {
         // CASO 1: È un file PDF. Usa il lettore configurato.
@@ -31,6 +25,14 @@ class WindowsOpener implements OpenerPlatformInterface {
         }
 
         final args = ['/A', 'page=$page', filePath];
+
+        // --- PRINT DI DEBUG AGGIUNTA ---
+        print("--- COMANDO ACROBAT --- ");
+        print("Eseguibile: $pdfViewerPath");
+        print("Argomenti: ${args.join(' ')}");
+        print("-----------------------");
+        // --------------------------
+
         await Process.start(pdfViewerPath, args, runInShell: false);
 
       } else {
