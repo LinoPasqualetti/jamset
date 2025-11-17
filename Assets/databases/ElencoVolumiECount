@@ -1,0 +1,11 @@
+SELECT volume,ArchivioProvenienza,strumento , count(*) as NumeroBrani--,ArchivioProvenienza      --,count(volume,strumento,ArchivioProvenienza)        -- ArchivioProvenienza,
+                --strumento,
+                --primolink,
+                --percradice,
+                --percresto,
+--          count(*)
+  FROM spartiti
+ WHERE tipoMulti LIKE 'PD%' 
+    --and   ArchivioProvenienza LIKE 'rea%'
+ group BY volume,ArchivioProvenienza,
+          strumento;
