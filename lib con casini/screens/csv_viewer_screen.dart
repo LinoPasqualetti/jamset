@@ -7,11 +7,11 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:jamset/file_path_validator.dart';
 import 'package:jamset/main.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
 import 'package:jamset/platform/opener_platform_interface.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:speech_to_text/speech_to_text.dart';
-import 'package:path/path.dart' as p;
 
 class CsvViewerScreen extends StatefulWidget {
   const CsvViewerScreen({super.key});
@@ -48,31 +48,12 @@ class _CsvViewerScreenState extends State<CsvViewerScreen>
 
   Map<String, int> _columnIndexMap = {};
   List<String> _csvHeaders = [];
-  String _percorsoPdfForAppBar = 'Caricamento...'; 
 
   @override
   void initState() {
     super.initState();
     _initSpeech();
     _requestStoragePermission();
-    _loadGlobalConfig();
-  }
-
-  Future<void> _loadGlobalConfig() async {
-    if (dbGlobale != null) {
-      try {
-        final configData = await dbGlobale!.query('DatiSistremaApp', columns: ['PercorsoPdf'], limit: 1);
-        if (mounted && configData.isNotEmpty) {
-          setState(() {
-            _percorsoPdfForAppBar = configData.first['PercorsoPdf'] as String? ?? 'Non impostato';
-          });
-        }
-      } catch (e) {
-        if (mounted) setState(() => _percorsoPdfForAppBar = 'Errore');
-      }
-    } else {
-      if (mounted) setState(() => _percorsoPdfForAppBar = 'DB non disp.');
-    }
   }
 
   void _initSpeech() async {
@@ -163,60 +144,137 @@ class _CsvViewerScreenState extends State<CsvViewerScreen>
 
   Future<void> _requestStoragePermission() async {
     if (kIsWeb || !Platform.isAndroid) return;
-    var status = await Permission.storage.status;
+    var status = await Permission.manageExternalStorage.status;
     if (!status.isGranted) {
-        status = await Permission.storage.request();
-    }
-    if (!status.isGranted) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Accesso ai file negato. La ricerca PDF non funzionerà.')),
-        );
+      status = await Permission.manageExternalStorage.request();
+      if (!status.isGranted) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Per funzionare, l\'app necessita dell\'accesso a tutti i file.')),
+          );
+        }
+        await openAppSettings();
       }
     }
   }
 
   void _handleOpenPdfAction({
-    required String volume,
-    required String numPag,
-    required String percRadice,
-    required String percResto,
+    required String titolo,    required String volume,
+    required String NumPag,    required String NumOrig,
+    required String idBra,     required String TipoMulti,
+    required String TipoDocu,  required String strumento,
+    required String Provenienza, required String link,
   }) async {
-    final String subPath = p.join(percRadice, percResto);
-    final String fileName = volume;
+    String nomeFileDaVolume = volume;
+    String SelTitolo = titolo;
+    String SelNumPag = NumPag;
+    String SelLink = link;
+    String Prova2;
+    String nomeFile;
 
-    if (!mounted) return;
+    String SelPercorso = link;
+    if (SelPercorso.startsWith('#')) SelPercorso = SelPercorso.substring(1);
+    if (SelPercorso.endsWith('#')) SelPercorso = SelPercorso.substring(0, SelPercorso.length - 1);
 
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (BuildContext loadingContext) => const Center(child: CircularProgressIndicator()),
-    );
+    int ultimoBackslashIndex = SelPercorso.lastIndexOf(r'\');
+    if (ultimoBackslashIndex != -1) {
+      nomeFile = SelPercorso.substring(ultimoBackslashIndex + 1);
+    } else {
+      nomeFile = SelPercorso;
+    }
+    SelPercorso = SelPercorso.substring(0, SelPercorso.length - nomeFile.length);
 
-    await _VerificaFile(
-      subPathDaDati: subPath,
-      fileNameDaDati: fileName,
-      inCasoDiSuccesso: (percorsoDelFile) async {
-        Navigator.of(context, rootNavigator: true).pop();
-        if (!mounted) return;
+    Prova2 = SelPercorso + nomeFile;
 
-        await OpenerPlatformInterface.instance.openPdf(
-          context: context,
-          filePath: percorsoDelFile,
-          page: int.tryParse(numPag) ?? 1,
-        );
-      },
-      inCasoDiFallimento: (percorsoTentato) {
-        Navigator.of(context, rootNavigator: true).pop();
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("File NON trovato: $percorsoTentato"), backgroundColor: Colors.red),
-        );
-      },
-    );
+    if (mounted) {
+      await showDialog(
+        context: context,
+        builder: (BuildContext dialogContext) {
+          String directoryBaseFinale = '';
+          String PercorsoPulito = '';
+          int indiceSequenza = Prova2.indexOf(":\\");
+          int indiceFine = Prova2.indexOf(nomeFileDaVolume);
+
+          if (indiceSequenza != -1 && indiceFine != -1) {
+            directoryBaseFinale = Prova2.substring(0, indiceSequenza + 2);
+            PercorsoPulito = Prova2.substring(indiceSequenza + 2, indiceFine);
+          } else {
+            directoryBaseFinale = "";
+            PercorsoPulito = Prova2;
+          }
+
+          return AlertDialog(
+            title: const Text('Dettagli Brano Selezionato'),
+            content: SingleChildScrollView(
+              child: ListBody(
+                children: <Widget>[
+                  const Text("Titolo:"),
+                  SelectableText(SelTitolo.isNotEmpty ? SelTitolo : "N/D"),
+                  const SizedBox(height: 8),
+                  const Text("Cartella:"),
+                  SelectableText(SelPercorso.isNotEmpty ? SelPercorso : "N/D"),
+                  const SizedBox(height: 8),
+                  const Text("Nome File:"),
+                  SelectableText(nomeFile.isNotEmpty ? nomeFile : "N/D"),
+                  const SizedBox(height: 8),
+                  const Text('Pagina:'),
+                  SelectableText(SelNumPag.isNotEmpty ? SelNumPag : "N/D"),
+                  const SizedBox(height: 8),
+                  const Text("Link Originale:"),
+                  SelectableText(SelLink.isNotEmpty ? SelLink : "N/A"),
+                ],
+              ),
+            ),
+            actions: <Widget>[
+              TextButton(
+                child: const Text('Annulla'),
+                onPressed: () => Navigator.of(dialogContext).pop(),
+              ),
+              ElevatedButton(
+                child: const Text('Visualizza PDF'),
+                onPressed: () async {
+                  Navigator.of(dialogContext).pop();
+
+                  showDialog(
+                    context: context,
+                    barrierDismissible: false,
+                    builder: (BuildContext loadingContext) => const Center(child: CircularProgressIndicator()),
+                  );
+
+                  await _VerificaFile(
+                    context: context,
+                    basePathDaDati: directoryBaseFinale,
+                    subPathDaDati: PercorsoPulito,      
+                    fileNameDaDati: nomeFileDaVolume,
+                    inCasoDiSuccesso: (percorsoDelFile) async {
+                      Navigator.of(context, rootNavigator: true).pop();
+                      if (!mounted) return;
+                      await OpenerPlatformInterface.instance.openPdf(
+                        context: context,
+                        filePath: percorsoDelFile,
+                        page: int.tryParse(SelNumPag) ?? 1,
+                      );
+                    },
+                    inCasoDiFallimento: (percorsoTentato) {
+                      Navigator.of(context, rootNavigator: true).pop();
+                      if (!mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text("File NON trovato: $percorsoTentato"), backgroundColor: Colors.red),
+                      );
+                    },
+                  );
+                },
+              ),
+            ],
+          );
+        },
+      );
+    }
   }
 
   Future<void> _VerificaFile({
+    required BuildContext context,
+    required String basePathDaDati,
     required String subPathDaDati,
     required String fileNameDaDati,
     required Function(String percorsoTrovato) inCasoDiSuccesso,
@@ -228,8 +286,11 @@ class _CsvViewerScreenState extends State<CsvViewerScreen>
     try {
       if (kIsWeb) {
         String baseUrlWeb = "http://192.168.1.100/JamsetPDF";
-        String percorsoRelativo = p.join(subPathDaDati, fileNameDaDati).replaceAll(r'\', '/');
-        percorsoFinaleDaAprire = "$baseUrlWeb/$percorsoRelativo";
+        String percorsoRelativo = '$subPathDaDati$fileNameDaDati'.replaceAll(r'\', '/');
+        if (percorsoRelativo.startsWith('/')) {
+          percorsoRelativo = percorsoRelativo.substring(1);
+        }
+        percorsoFinaleDaAprire = "$baseUrlWeb/${Uri.encodeFull(percorsoRelativo)}";
         final response = await http.head(Uri.parse(percorsoFinaleDaAprire));
         risorsaEsiste = (response.statusCode == 200);
       } else {
@@ -247,7 +308,7 @@ class _CsvViewerScreenState extends State<CsvViewerScreen>
         percorsoFinaleDaAprire = risultatoNativo.fullPath ?? "Percorso non generato";
       }
     } catch (e) {
-      percorsoFinaleDaAprire = "Errore durante la verifica: $e";
+      percorsoFinaleDaAprire = "Errore: $e";
       risorsaEsiste = false;
     }
 
@@ -363,11 +424,7 @@ class _CsvViewerScreenState extends State<CsvViewerScreen>
     super.build(context);
     return Scaffold(
       appBar: AppBar(
-        title: SelectableText(
-          'Spartiti Visualizzatore - Cartella: $_percorsoPdfForAppBar Filtri: $Laricerca',
-          style: const TextStyle(fontSize: 14),
-          maxLines: 2,
-        ),
+        title: Text('Spartiti Visualizzatore $Laricerca'),
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(110.0),
           child: Padding(
@@ -543,15 +600,16 @@ class _CsvViewerScreenState extends State<CsvViewerScreen>
               icon: const Icon(Icons.picture_as_pdf, color: Colors.red),
               tooltip: 'Apri PDF',
               onPressed: () {
-                // --- LOGICA CORRETTA E SEMPLIFICATA ---
-                final percRadice = ""; // Ignoriamo il valore dal CSV
-                final percResto = _getCellValue(row, 'PercResto');
+                final numOrig = _getCellValue(row, 'NumOrig');
+                final idBra = _getCellValue(row, 'IdBra');
+                final tipoDocu = _getCellValue(row, 'TipoDocu');
+                final link = _getCellValue(row, 'PrimoLink');
 
                 _handleOpenPdfAction(
-                  volume: volume, 
-                  numPag: numPag,
-                  percRadice: percRadice, 
-                  percResto: percResto,
+                  titolo: titolo, volume: volume, NumPag: numPag,
+                  NumOrig: numOrig, idBra: idBra, TipoMulti: tipoMulti,
+                  TipoDocu: tipoDocu, strumento: strumento,
+                  Provenienza: provenienza, link: link,
                 );
               },
             ),

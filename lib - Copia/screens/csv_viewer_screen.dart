@@ -170,9 +170,10 @@ class _CsvViewerScreenState extends State<CsvViewerScreen>
     if (!status.isGranted) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Accesso ai file negato. La ricerca PDF non funzionerà.')),
+          const SnackBar(content: Text('Per funzionare, l\'app necessita dell\'accesso ai file.')),
         );
       }
+     // await openAppSettings();
     }
   }
 
@@ -181,8 +182,9 @@ class _CsvViewerScreenState extends State<CsvViewerScreen>
     required String numPag,
     required String percRadice,
     required String percResto,
+    ////// modificare qui la costruzione di percorsoPdfForAppBar (= C:\JamsetPDF preso da DatiSistremaApp e percresto) dovremo passare due diversi valori a p.join
   }) async {
-    final String subPath = p.join(percRadice, percResto);
+    final String subPath = p.join(_percorsoPdfForAppBar, percResto);
     final String fileName = volume;
 
     if (!mounted) return;
@@ -363,6 +365,7 @@ class _CsvViewerScreenState extends State<CsvViewerScreen>
     super.build(context);
     return Scaffold(
       appBar: AppBar(
+        // --- MODIFICA APPLICATA QUI ---
         title: SelectableText(
           'Spartiti Visualizzatore - Cartella: $_percorsoPdfForAppBar Filtri: $Laricerca',
           style: const TextStyle(fontSize: 14),
@@ -543,14 +546,50 @@ class _CsvViewerScreenState extends State<CsvViewerScreen>
               icon: const Icon(Icons.picture_as_pdf, color: Colors.red),
               tooltip: 'Apri PDF',
               onPressed: () {
-                // --- LOGICA CORRETTA E SEMPLIFICATA ---
-                final percRadice = ""; // Ignoriamo il valore dal CSV
-                final percResto = _getCellValue(row, 'PercResto');
+                final percOri = _percorsoPdfForAppBar;
+                final percRestoOri = _getCellValue(row, 'PercResto');
+                String percRadice = "";
+                String percResto = "";
+                String parteDiRadice = "";
+                // Trova il primo backslash in radiceOri
+                int primoBackslashIndex = percOri.indexOf('\\');
+
+                if (primoBackslashIndex != -1) {
+                  // Estrai la parte prima del primo backslash (es. "C:")
+                  percRadice = percOri.substring(0, primoBackslashIndex);
+
+                  // Estrai la parte dopo il primo backslash (es. "\JamsetPDF")
+                  parteDiRadice = percOri.substring(primoBackslashIndex);
+
+                  // Unisci la parte di radice con restoOri, gestendo i separatori
+                  //percResto = p.join(parteDiRadice, percRestoOri);
+                  percResto = parteDiRadice + percRestoOri;
+                } else {
+                  // Caso in cui non c'è un backslash, anche se nel tuo esempio c'è
+                  percRadice = percOri; // Usa tutto il percorso come radice
+                  percRadice=p.join(percOri); //trasforma in formato Android
+                  percResto= p.join( percRestoOri);
+                  //percResto
+                }
+
+                print('Radice: $percRadice'); // Output: Radice: C:
+                print('Resto: $percResto');   // Output: Resto: \JamsetPDF\AltroPerc\
+                //final percRadice = _percorsoPdfForAppBar;
+                //final percResto = _getCellValue(row, 'PercResto');
+
+                /////trasformo il concetto di radice perchè verrà successivamente interpretato come drive
+                ///// SE WINDOWS
+                // se percRadice = "C:\JamsetPDF" e percResto = "\PDF REAL BOOK\BookEb\"
+                // lasciandoli così handleOpnPdf li interpreterebbe male
+                // invece trasformiamo
+                // percRadice = "C:" e percResto = "\JamsetPDF\PDF REAL BOOK\BookEb"
+                /// percResto=
+                /////
 
                 _handleOpenPdfAction(
                   volume: volume, 
                   numPag: numPag,
-                  percRadice: percRadice, 
+                  percRadice: percRadice,
                   percResto: percResto,
                 );
               },

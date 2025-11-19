@@ -1,11 +1,8 @@
-/// funzioni_variazione_dati_screen.dart
-///  Gestione di una lista di documenti (PDF o Altro) governata da unaa ricerca sul DB di catalogo corrente
-///  RICERCA DEI VALORI ATTUALMENTE TRAMITE UN BOX CONTENENTE UNA QUERY
-///  EMISSIONE DEL RESULTSET CON ATTIVAZIONE DELLA VISUALIZZAZIONE ONTAP
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:data_table_2/data_table_2.dart';
+import 'package:path/path.dart' as p; // <-- Per il join dei percorsi
 
 import 'package:jamset/main.dart';
 import 'package:jamset/platform/opener_platform_interface.dart';
@@ -37,8 +34,9 @@ class _FunzioniVariazioneDatiScreenState extends State<FunzioniVariazioneDatiScr
   void initState() {
     super.initState();
 
+    // --- QUERY SEMPLIFICATA ---
     final String defaultQuery = """
-select distinct Numpag,titolo,volume,percradice||percresto||Volume as PerApertura,ArchivioProvenienza, strumento,primolink, percradice,percresto 
+select distinct Numpag,titolo,volume,ArchivioProvenienza, strumento,primolink, percradice,percresto 
 from spartiti where tipoMulti like 'PD%' and titolo like 'love%'
 order by titolo,strumento
 """;
@@ -123,31 +121,29 @@ order by titolo,strumento
     }
   }
 
+  // --- NUOVA LOGICA DI APERTURA DINAMICA ---
   Future<void> _openPdfFromRow(Map<String, dynamic> rowData) async {
     final lowerCaseRowData = {for (var k in rowData.keys) k.toLowerCase(): rowData[k]};
 
-    if (!lowerCaseRowData.containsKey('perapertura') || !lowerCaseRowData.containsKey('numpag')) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('ERRORE: La query deve contenere le colonne "PerApertura" e "Numpag" per poter aprire il PDF.'),
-        backgroundColor: Colors.red,
-      ));
-      return;
-    }
-
-    final filePath = lowerCaseRowData['perapertura'] as String?;
+    // Componenti del percorso dal DB
+    final percRadice = lowerCaseRowData['percradice']?.toString() ?? '';
+    final percResto = lowerCaseRowData['percresto']?.toString() ?? '';
+    final volume = lowerCaseRowData['volume']?.toString() ?? '';
     final pageNum = lowerCaseRowData['numpag'];
 
-    if (filePath == null || filePath.isEmpty) {
+    if (gPercorsoPdf.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('ERRORE: Il percorso del file (PerApertura) è vuoto o nullo.'),
+        content: Text('ERRORE: Percorso PDF non configurato nelle impostazioni di sistema.'),
         backgroundColor: Colors.red,
       ));
       return;
     }
 
+    // Costruzione dinamica del percorso
+    final String filePath = p.join(gPercorsoPdf, percRadice, percResto, volume);
     final page = int.tryParse(pageNum?.toString() ?? '1') ?? 1;
 
-    // --- PRINT DI DEBUG ---
+    // Stampa di debug per confronto
     print('--- [DB CONTEXT] Tentativo di apertura ---');
     print('Path: $filePath');
     print('Pagina: $page');
@@ -252,7 +248,6 @@ order by titolo,strumento
       columns: columnKeys.map((key) {
         ColumnSize size;
         switch (key.toLowerCase()) {
-          case 'perapertura': size = ColumnSize.M; break;
           case 'numpag': size = ColumnSize.S; break;
           case 'titolo': size = ColumnSize.L; break;
           default: size = ColumnSize.M;
