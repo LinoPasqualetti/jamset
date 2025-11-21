@@ -1,0 +1,8 @@
+CREATE VIRTUAL TABLE spartiti_fts USING fts5(
+    titolo,
+    autore,
+    volume,
+    ArchivioProvenienza,
+    content='spartiti', -- La tabella originale
+    content_rowid='IdBra' -- La chiave primaria della tabella originale
+);

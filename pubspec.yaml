@@ -28,6 +28,7 @@ dependencies:
   # Database
   sqflite: ^2.3.3
   sqflite_common_ffi: ^2.3.3
+  sqlite3_flutter_libs: ^0.5.22
 
   # Apertura file e URL
   url_launcher: ^6.3.0

@@ -1,7 +1,9 @@
 //////////// variaCatalogo.dart
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:path/path.dart' as p;
 
 import 'package:jamset/main.dart'; // 1. IMPORT CORRETTO
 import 'package:jamset/screens/lista_spartiti_catalogo.dart'; // 1. IMPORT CORRETTO
@@ -55,11 +57,10 @@ class _VariaCatalogoScreenState extends State<VariaCatalogoScreen> {
   }
 
   Future<void> _saveData() async {
-    // 2. USO DELLA VARIABILE CORRETTA
     if (!_formKey.currentState!.validate() || dbGlobale == null) return;
 
     try {
-      final db = dbGlobale!; // Usa la connessione esistente
+      final db = dbGlobale!;
       
       Map<String, dynamic> dataToSave = {};
       _controllers.forEach((key, controller) => dataToSave[key] = controller.text);
@@ -82,7 +83,6 @@ class _VariaCatalogoScreenState extends State<VariaCatalogoScreen> {
   }
 
   Future<void> _deleteData() async {
-    // 2. USO DELLA VARIABILE CORRETTA
     if (_isNewRecord || widget.initialData == null || dbGlobale == null) return;
 
     final id = widget.initialData!['id'];
@@ -109,7 +109,7 @@ class _VariaCatalogoScreenState extends State<VariaCatalogoScreen> {
 
     if (confirmed) {
       try {
-        final db = dbGlobale!; // Usa la connessione esistente
+        final db = dbGlobale!;
         await db.delete('elenco_cataloghi', where: 'id = ?', whereArgs: [id]);
 
         if(mounted) {
@@ -145,12 +145,55 @@ class _VariaCatalogoScreenState extends State<VariaCatalogoScreen> {
     );
   }
 
+  // --- NUOVA FUNZIONE PER MOSTRARE INFO DB ---
+  void _showDbInfo() {
+    final dbName = _isNewRecord ? '(nuovo catalogo)' : _controllers['nome_file_db']?.text ?? 'N/D';
+    final fullPath = p.join(gDatabasePath, dbName);
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Informazioni Database'),
+        content: SingleChildScrollView(
+          child: ListBody(
+            children: <Widget>[
+              const Text('Nome file database del catalogo:'),
+              SelectableText(dbName, style: const TextStyle(fontWeight: FontWeight.bold)),
+              const SizedBox(height: 16),
+              const Text('Percorso completo della cartella dei DB:'),
+              SelectableText(gDatabasePath, style: const TextStyle(fontFamily: 'monospace', fontSize: 12)),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            child: const Text('Copia Percorso'),
+            onPressed: () {
+              Clipboard.setData(ClipboardData(text: gDatabasePath));
+              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Percorso cartella copiato!')));
+            },
+          ),
+          TextButton(
+            child: const Text('Chiudi'),
+            onPressed: () => Navigator.of(context).pop(),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: Text(_isNewRecord ? 'Nuovo Catalogo' : 'Varia Catalogo'),
         actions: [
+          // --- PULSANTE INFO AGGIUNTO ---
+          IconButton(
+            icon: const Icon(Icons.info_outline),
+            onPressed: _showDbInfo,
+            tooltip: 'Info Database',
+          ),
           if (!_isNewRecord)
             IconButton(
               icon: const Icon(Icons.delete, color: Colors.red),

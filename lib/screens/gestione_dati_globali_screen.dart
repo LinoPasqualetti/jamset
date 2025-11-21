@@ -1,5 +1,5 @@
-
 import 'package:flutter/material.dart';
+import 'package:jamset/main.dart';
 import 'package:jamset/screens/GestisciElencoCataloghi.dart';
 import 'package:jamset/screens/variazione_dati_generali_screen.dart';
 
@@ -10,8 +10,20 @@ class GestioneDatiGlobaliScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Gestione Dati Globali'),
-        backgroundColor: Colors.indigo,
+        centerTitle: true,
+        foregroundColor: Colors.white,
+        backgroundColor: Colors.grey,
+        title: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            const Text('Gestione Dati Globali'),
+            SelectableText(
+              'Cartella DB: $gDatabasePath',
+              style: const TextStyle(fontSize: 12, color: Colors.white70),
+            ),
+          ],
+        ),
       ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),

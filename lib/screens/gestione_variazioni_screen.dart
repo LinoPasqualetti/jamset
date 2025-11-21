@@ -50,7 +50,8 @@ class GestioneVariazioniScreen extends StatelessWidget {
                         Expanded(child: _buildFeatureButton(context, icon: Icons.backup_outlined, title: 'c) Backup', subtitle: 'Gestisci backup e authority', onTap: () {})),
                         const SizedBox(width: 8),
                         // 2. COLLEGAMENTO AL NUOVO MENU
-                        Expanded(child: _buildFeatureButton(context, icon: Icons.settings_applications_outlined, title: 'd) Impostazioni', subtitle: 'Gestisci Dati Globali', onTap: () {
+                        Expanded(child: _buildFeatureButton(context, icon: Icons.settings_applications_outlined, title: 'd) Impostazioni', subtitle: 'Gestisci Dati Globali',
+                            onTap: () {
                           Navigator.push(context, MaterialPageRoute(builder: (context) => const GestioneDatiGlobaliScreen()));
                         })),
                       ],

@@ -26,15 +26,20 @@ Database? dbGlobale;
 Database? dbCatalogoAttivo;
 String gActiveCatalogDbName = '';
 String gPercorsoPdf = ''; 
+String gDatabasePath = ''; // <-- VARIABILE AGGIUNTA
 // =======================
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  // --- Inizializzazione Piattaforma-Specifica di SQLite ---
   if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+    // Per il desktop, inizializziamo FFI e impostiamo la factory.
     sqfliteFfiInit();
     databaseFactory = databaseFactoryFfi;
   }
+  // Per Android e iOS, NON facciamo nulla qui. Il pacchetto `sqlite3_flutter_libs` 
+  // si integra automaticamente con la configurazione di default di `sqflite`.
 
   try {
     if (Platform.isWindows) {
@@ -59,7 +64,9 @@ Future<void> main() async {
       }
     }
 
-    final dbDir = await getDatabasesPath();
+    gDatabasePath = await getDatabasesPath(); // <-- VALORIZZAZIONE
+    final dbDir = gDatabasePath;
+    if (kDebugMode) print("--- PERCORSO DATABASE: $dbDir ---");
 
     // 1. Apertura VecchioDb.db
     final dbPathVecchio = join(dbDir, "VecchioDb.db");
@@ -70,25 +77,8 @@ Future<void> main() async {
       await File(dbPathVecchio).writeAsBytes(bytes, flush: true);
     }
     dbVecchio = await openDatabase(dbPathVecchio);
-    if (kDebugMode) print("Database VecchioDb.db aperto.");
-
-    // --- SANIFICAZIONE di VecchioDb.db ---
-    if (dbVecchio != null) {
-      final tables = await dbVecchio!.query('sqlite_master', where: 'type = ? AND name = ?', whereArgs: ['table', 'spartiti_andr']);
-      if (tables.isNotEmpty) {
-        if (kDebugMode) print("Trovata tabella 'spartiti_andr'. Avvio sanificazione...");
-        await dbVecchio!.transaction((txn) async {
-          if (Platform.isWindows) {
-            await txn.execute('DROP TABLE spartiti_andr;');
-          } else {
-            await txn.execute('DROP TABLE IF EXISTS spartiti;');
-            await txn.execute('ALTER TABLE spartiti_andr RENAME TO spartiti;');
-          }
-        });
-        if (kDebugMode) print("Sanificazione completata.");
-      }
-    }
-    // --- FINE SANIFICAZIONE ---
+    await _setupDatabase(dbVecchio!, "VecchioDb");
+    if (kDebugMode) print("Database VecchioDb.db aperto e configurato.");
 
     // 2. Apertura DBGlobale_seed.db
     final dbPathGlobale = join(dbDir, "DBGlobale_seed.db");
@@ -126,7 +116,8 @@ Future<void> main() async {
       await File(dbPathCatalogo).writeAsBytes(bytes, flush: true);
     }
     dbCatalogoAttivo = await openDatabase(dbPathCatalogo);
-    if (kDebugMode) print("Database catalogo '$gActiveCatalogDbName' aperto.");
+    await _setupDatabase(dbCatalogoAttivo!, gActiveCatalogDbName);
+    if (kDebugMode) print("Database catalogo '$gActiveCatalogDbName' aperto e configurato.");
 
     runApp(const MyApp());
 
@@ -134,6 +125,63 @@ Future<void> main() async {
     if (kDebugMode) print("ERRORE CRITICO: $e");
     runApp(ErrorApp(error: e.toString()));
   }
+}
+
+// --- NUOVA LOGICA DI SETUP DEL DATABASE ---
+Future<void> _setupDatabase(Database db, String dbName) async {
+  await db.transaction((txn) async {
+    // 1. Normalizzazione dei percorsi (solo su piattaforme non-Windows)
+    if (!Platform.isWindows) {
+      if (kDebugMode) print("[$dbName] Normalizzazione percorsi per piattaforma non-Windows...");
+      await txn.rawUpdate("UPDATE spartiti SET percResto = REPLACE(percResto, '\\', '/')");
+    }
+
+    // 2. Verifica e creazione indice FTS5 (SOLO SU WINDOWS, per ora)
+    if (Platform.isWindows) {
+      final ftsTable = await txn.query('sqlite_master', where: 'type = ? AND name = ?', whereArgs: ['table', 'spartiti_fts']);
+      if (ftsTable.isEmpty) {
+        if (kDebugMode) print("[$dbName] Indice FTS non trovato. Creazione in corso...");
+
+        // Crea la tabella virtuale
+        await txn.execute('''
+          CREATE VIRTUAL TABLE spartiti_fts USING fts5 (
+            titolo, autore, volume, ArchivioProvenienza,
+            content = \'spartiti\', content_rowid = \'IdBra\'
+          );
+        ''');
+
+        // Popola l'indice
+        await txn.execute('''
+          INSERT INTO spartiti_fts(rowid, titolo, autore, volume, ArchivioProvenienza)
+          SELECT IdBra, titolo, autore, volume, ArchivioProvenienza FROM spartiti;
+        ''');
+
+        // Crea i trigger
+        await txn.execute('''
+          CREATE TRIGGER spartiti_ai AFTER INSERT ON spartiti BEGIN
+            INSERT INTO spartiti_fts(rowid, titolo, autore, volume, ArchivioProvenienza)
+            VALUES (new.IdBra, new.titolo, new.autore, new.volume, new.ArchivioProvenienza);
+          END;
+        ''');
+        await txn.execute('''
+          CREATE TRIGGER spartiti_ad AFTER DELETE ON spartiti BEGIN
+            INSERT INTO spartiti_fts(spartiti_fts, rowid, titolo, autore, volume, ArchivioProvenienza) 
+            VALUES(\'delete\', old.IdBra, old.titolo, old.autore, old.volume, old.ArchivioProvenienza);
+          END;
+        ''');
+        await txn.execute('''
+          CREATE TRIGGER spartiti_au AFTER UPDATE ON spartiti BEGIN
+            INSERT INTO spartiti_fts(spartiti_fts, rowid, titolo, autore, volume, ArchivioProvenienza) 
+            VALUES(\'delete\', old.IdBra, old.titolo, old.autore, old.volume, old.ArchivioProvenienza);
+            INSERT INTO spartiti_fts(rowid, titolo, autore, volume, ArchivioProvenienza)
+            VALUES (new.IdBra, new.titolo, new.autore, new.volume, new.ArchivioProvenienza);
+          END;
+        ''');
+
+        if (kDebugMode) print("[$dbName] Creazione indice FTS e triggers completata.");
+      }
+    }
+  });
 }
 
 class MyApp extends StatelessWidget {
