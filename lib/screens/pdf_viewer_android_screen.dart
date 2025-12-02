@@ -1,66 +1,64 @@
-import 'package:flutter/material.dart';
-import 'package:flutter_pdfview/flutter_pdfview.dart';
-import 'package:path/path.dart' as p; 
+﻿import 'package:flutter/material.dart';
+import 'package:open_file/open_file.dart';
 
-/// Una schermata per visualizzare un file PDF locale usando flutter_pdfview.
-class PdfViewerAndroidScreen extends StatefulWidget {
+class PdfViewerAndroidScreen extends StatelessWidget {
   final String filePath;
-  final int initialPage;
-
-  const PdfViewerAndroidScreen({
-    super.key,
-    required this.filePath,
-    required this.initialPage,
-  });
-
-  @override
-  State<PdfViewerAndroidScreen> createState() => _PdfViewerAndroidScreenState();
-}
-
-class _PdfViewerAndroidScreenState extends State<PdfViewerAndroidScreen> {
-  late PDFViewController _pdfViewController;
-  bool _isReady = false;
-
+  
+  const PdfViewerAndroidScreen({super.key, required this.filePath});
+  
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(p.basename(widget.filePath)),
+        title: const Text('Visualizza PDF'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.open_in_new),
+            onPressed: () => _openWithExternalApp(filePath, context),
+          ),
+        ],
       ),
-      body: PDFView(
-        filePath: widget.filePath,
-        enableSwipe: true,
-        swipeHorizontal: false,
-        autoSpacing: false,
-        pageFling: true,
-        defaultPage: widget.initialPage - 1, // flutter_pdfview usa pagine 0-based
-        onRender: (pages) {
-          setState(() {
-            _isReady = true;
-          });
-          print("PDF Renderizzato: $pages pagine totali.");
-        },
-        onError: (error) {
-          print("Errore durante la visualizzazione del PDF: $error");
-          // Opzionale: mostra un dialog di errore
-          showDialog(
-            context: context,
-            builder: (context) => AlertDialog(
-              title: const Text('Errore PDF'),
-              content: Text('Impossibile caricare il file PDF.\n\nDettagli: $error'),
-              actions: [
-                TextButton(
-                  child: const Text('OK'),
-                  onPressed: () => Navigator.of(context).pop(),
-                ),
-              ],
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.picture_as_pdf, size: 100, color: Colors.red),
+            const SizedBox(height: 20),
+            Text(
+              'File PDF:',
+              style: Theme.of(context).textTheme.headlineMedium,
             ),
-          );
-        },
-        onViewCreated: (PDFViewController pdfViewController) {
-          _pdfViewController = pdfViewController;
-        },
+            const SizedBox(height: 10),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: SelectableText(
+                filePath,
+                style: const TextStyle(fontFamily: 'monospace'),
+                textAlign: TextAlign.center,
+              ),
+            ),
+            const SizedBox(height: 30),
+            ElevatedButton.icon(
+              icon: const Icon(Icons.open_in_browser),
+              label: const Text('Apri con app esterna'),
+              onPressed: () => _openWithExternalApp(filePath, context),
+            ),
+          ],
+        ),
       ),
     );
+  }
+  
+  Future<void> _openWithExternalApp(String path, BuildContext context) async {
+    final result = await OpenFile.open(path);
+    
+    if (result.type != ResultType.done) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Errore: ${result.message}'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 }

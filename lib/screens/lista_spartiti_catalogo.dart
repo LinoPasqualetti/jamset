@@ -1,6 +1,6 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:sqflite/sqflite.dart';
-import 'package:data_table_2/data_table_2.dart';
+// import 'package:data_table_2/data_table_2.dart'; // RIMOSSO
 
 import 'package:jamsetgemini/main.dart'; // Import corretto
 
@@ -35,9 +35,9 @@ class _ListaSpartitiCatalogoScreenState extends State<ListaSpartitiCatalogoScree
   Future<void> _loadSpartiti() async {
     print('--- Caricamento spartiti per: ${widget.dbName} ---');
     try {
-      // Il DB è già aperto e disponibile in dbCatalogoAttivo
+      // Il DB Ã¨ giÃ  aperto e disponibile in dbCatalogoAttivo
       if (dbCatalogoAttivo == null) {
-        throw Exception('Il database del catalogo attivo non è disponibile.');
+        throw Exception('Il database del catalogo attivo non Ã¨ disponibile.');
       }
       
       final data = await dbCatalogoAttivo!.query('spartiti', limit: 50);
@@ -82,7 +82,7 @@ class _ListaSpartitiCatalogoScreenState extends State<ListaSpartitiCatalogoScree
     }
 
     final columns = _spartiti.first.keys.map((key) {
-      return DataColumn2(label: Text(key, style: const TextStyle(fontWeight: FontWeight.bold)));
+      return DataColumn(label: Text(key, style: const TextStyle(fontWeight: FontWeight.bold)));
     }).toList();
 
     final rows = _spartiti.map((row) {
@@ -91,12 +91,14 @@ class _ListaSpartitiCatalogoScreenState extends State<ListaSpartitiCatalogoScree
       }).toList());
     }).toList();
 
-    return DataTable2(
+    return DataTable(
       columnSpacing: 12,
       horizontalMargin: 12,
-      minWidth: 1500,
+     // minWidth: 1500,
       columns: columns,
       rows: rows,
     );
   }
 }
+
+

@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:jamsetgemini/main.dart'; // Importa main.dart per accedere alla navigatorKey globale
 import 'package:jamsetgemini/platform/opener_platform_interface.dart';
 import 'package:jamsetgemini/screens/pdf_viewer_android_screen.dart';
@@ -16,10 +16,11 @@ class AndroidOpener implements OpenerPlatformInterface {
         MaterialPageRoute(
           builder: (context) => PdfViewerAndroidScreen(
             filePath: filePath,
-            initialPage: page,
+            // page: page, // RIMOSSO
           ),
         ),
       );
     }
   }
 }
+

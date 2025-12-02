@@ -1,14 +1,14 @@
-/// funzioni_variazione_dati_screen.dart
-///  Gestione di una lista di documenti (PDF o Altro) governata da unaa ricerca sul DB di catalogo corrente
-///  RICERCA DEI VALORI ATTUALMENTE TRAMITE UN BOX CONTENENTE UNA QUERY
-///  EMISSIONE DEL RESULTSET CON ATTIVAZIONE DELLA VISUALIZZAZIONE ONTAP
+﻿/// funzioni_variazione_dati_screen.dart - VERSIONE CORRETTA CON QUERY FIX
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:data_table_2/data_table_2.dart';
+import 'package:path/path.dart' as p;
 
 import 'package:jamsetgemini/main.dart';
 import 'package:jamsetgemini/platform/opener_platform_interface.dart';
+import 'package:jamsetgemini/utils/file_opener.dart';  // Aggiungi import
 
 class FunzioniVariazioneDatiScreen extends StatefulWidget {
   const FunzioniVariazioneDatiScreen({super.key});
@@ -18,7 +18,8 @@ class FunzioniVariazioneDatiScreen extends StatefulWidget {
       _FunzioniVariazioneDatiScreenState();
 }
 
-class _FunzioniVariazioneDatiScreenState extends State<FunzioniVariazioneDatiScreen> with AutomaticKeepAliveClientMixin {
+class _FunzioniVariazioneDatiScreenState extends State<FunzioniVariazioneDatiScreen>
+    with AutomaticKeepAliveClientMixin {
   bool _isLoading = true;
   bool _isQueryRunning = false;
   String? _error;
@@ -37,12 +38,23 @@ class _FunzioniVariazioneDatiScreenState extends State<FunzioniVariazioneDatiScr
   void initState() {
     super.initState();
 
+    // QUERY ORIGINALE ESATTA
     final String defaultQuery = """
-select distinct Numpag,a.titolo,a.volume,percradice||percresto||a.Volume as PerApertura,a.ArchivioProvenienza, strumento,primolink, percradice,percresto 
-from spartiti a
-JOIN spartiti_fts fts on a.idBra=fts.rowid
- where a.tipoMulti like 'PD%' and spartiti_fts match 'girl ipanema'
-order by a.titolo,a.strumento
+SELECT DISTINCT 
+  Numpag,
+  a.titolo,
+  a.volume,
+  a.ArchivioProvenienza, 
+  a.strumento,
+  primolink,
+  percradice,
+  percresto,
+  percradice||percresto||a.Volume as PerApertura 
+FROM spartiti a
+JOIN spartiti_fts fts ON a.idBra = fts.rowid
+WHERE a.tipoMulti LIKE 'PD%' 
+  AND spartiti_fts MATCH 'girl ipanema'
+ORDER BY a.titolo, a.strumento
 """;
 
     _sqlController = TextEditingController(text: defaultQuery);
@@ -126,22 +138,26 @@ order by a.titolo,a.strumento
   }
 
   Future<void> _openPdfFromRow(Map<String, dynamic> rowData) async {
+    // Normalizza le chiavi a lowercase
     final lowerCaseRowData = {for (var k in rowData.keys) k.toLowerCase(): rowData[k]};
 
-    if (!lowerCaseRowData.containsKey('perapertura') || !lowerCaseRowData.containsKey('numpag')) {
+    // VERIFICA I CAMPI NECESSARI (NON PIÙ PerApertura!)
+    if (!lowerCaseRowData.containsKey('percresto') ||
+        !lowerCaseRowData.containsKey('volume')) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('ERRORE: La query deve contenere le colonne "PerApertura" e "Numpag" per poter aprire il PDF.'),
+        content: Text('ERRORE: La query deve contenere: PercResto e Volume'),
         backgroundColor: Colors.red,
       ));
       return;
     }
 
-    final filePath = lowerCaseRowData['perapertura'] as String?;
+    final percResto = lowerCaseRowData['percresto'] as String?;
+    final volume = lowerCaseRowData['volume'] as String?;
     final pageNum = lowerCaseRowData['numpag'];
 
-    if (filePath == null || filePath.isEmpty) {
+    if (percResto == null || percResto.isEmpty || volume == null || volume.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('ERRORE: Il percorso del file (PerApertura) è vuoto o nullo.'),
+        content: Text('ERRORE: PercResto o Volume sono vuoti.'),
         backgroundColor: Colors.red,
       ));
       return;
@@ -149,17 +165,116 @@ order by a.titolo,a.strumento
 
     final page = int.tryParse(pageNum?.toString() ?? '1') ?? 1;
 
-    // --- PRINT DI DEBUG ---
-    print('--- [DB CONTEXT] Tentativo di apertura ---');
-    print('Path: $filePath');
+    // --- LOGICA UNIFICATA: USA SEMPRE gPercorsoPdf COME BASE ---
+    if (gPercorsoPdf.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('ERRORE: Percorso PDF non configurato. Vai nelle Impostazioni.'),
+        backgroundColor: Colors.red,
+      ));
+      return;
+    }
+
+    // Costruisci il percorso corretto
+    final fullPath = _buildCorrectPdfPath(gPercorsoPdf, percResto, volume);
+
+    // --- DEBUG DETTAGLIATO ---
+    print('=== APERTURA PDF DA RICERCA FTS ===');
+    print('Piattaforma: ${Platform.operatingSystem}');
+    print('gPercorsoPdf: $gPercorsoPdf');
+    print('PercResto: $percResto');
+    print('Volume: $volume');
+    print('Path finale: $fullPath');
     print('Pagina: $page');
-    // ---------------------
+
+    // Verifica se il file esiste
+    try {
+      final file = File(fullPath);
+      final exists = await file.exists();
+      print('📄 File esiste? $exists');
+
+      if (!exists) {
+        print('🔍 DEBUG percorsi alternativi:');
+
+        // 1. Prova con path.join (come fa csv_viewer)
+        final pathJoinResult = p.join(gPercorsoPdf, percResto, volume);
+        print('   Path.join: $pathJoinResult');
+        print('   Path.join esiste? ${await File(pathJoinResult).exists()}');
+
+        // 2. Prova con percorsi normalizzati
+        final normalized = _normalizeAndJoin(gPercorsoPdf, percResto, volume);
+        print('   Normalizzato: $normalized');
+        print('   Normalizzato esiste? ${await File(normalized).exists()}');
+      }
+    } catch (e) {
+      print('❌ Errore verifica file: $e');
+    }
 
     await OpenerPlatformInterface.instance.openPdf(
       context: context,
-      filePath: filePath,
+      filePath: fullPath,
       page: page,
     );
+  }
+
+// FUNZIONE DI SUPPORTO PER COSTRUIRE PERCORSI CORRETTI
+  String _buildCorrectPdfPath(String basePath, String percResto, String volume) {
+    // Normalizza i percorsi
+    String cleanBase = basePath.trim();
+    String cleanResto = percResto.trim();
+    String cleanVolume = volume.trim();
+
+    // Su Windows
+    if (Platform.isWindows) {
+      // Rimuovi slash finale da base
+      if (cleanBase.endsWith(r'\')) {
+        cleanBase = cleanBase.substring(0, cleanBase.length - 1);
+      }
+
+      // Rimuovi slash iniziale da resto se presente
+      if (cleanResto.startsWith(r'\')) {
+        cleanResto = cleanResto.substring(1);
+      }
+
+      // Costruisci il percorso Windows-style
+      return '$cleanBase\\$cleanResto\\$cleanVolume';
+    }
+    // Su altri OS
+    else {
+      // Rimuovi slash finale da base
+      if (cleanBase.endsWith('/')) {
+        cleanBase = cleanBase.substring(0, cleanBase.length - 1);
+      }
+
+      // Rimuovi slash iniziale da resto se presente
+      if (cleanResto.startsWith('/')) {
+        cleanResto = cleanResto.substring(1);
+      }
+
+      // Costruisci il percorso Unix-style
+      return '$cleanBase/$cleanResto/$cleanVolume';
+    }
+  }
+
+// Alternativa con path.join ma normalizzata
+  String _normalizeAndJoin(String basePath, String percResto, String volume) {
+    // Normalizza separatori
+    String normalizedBase = basePath.replaceAll(r'\\', r'\').replaceAll('//', '/');
+    String normalizedResto = percResto.replaceAll(r'\\', r'\').replaceAll('//', '/');
+
+    // Rimuovi slash finale da base
+    if (Platform.isWindows && normalizedBase.endsWith(r'\')) {
+      normalizedBase = normalizedBase.substring(0, normalizedBase.length - 1);
+    } else if (!Platform.isWindows && normalizedBase.endsWith('/')) {
+      normalizedBase = normalizedBase.substring(0, normalizedBase.length - 1);
+    }
+
+    // Rimuovi slash iniziale da resto
+    if (normalizedResto.startsWith('/') || normalizedResto.startsWith(r'\')) {
+      normalizedResto = normalizedResto.substring(1);
+    }
+
+    // Usa path.join
+    return p.join(normalizedBase, normalizedResto, volume);
   }
 
   @override
@@ -178,12 +293,20 @@ order by a.titolo,a.strumento
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Text("Tabella attiva: spartiti", style: TextStyle(fontWeight: FontWeight.bold, fontStyle: FontStyle.italic)),
+          const Text("Tabella attiva: spartiti",
+              style: TextStyle(fontWeight: FontWeight.bold, fontStyle: FontStyle.italic)),
           const SizedBox(height: 10),
+          const Text("NOTA: I percorsi vengono corretti automaticamente per la piattaforma",
+              style: TextStyle(fontSize: 12, color: Colors.blue)),
+          const SizedBox(height: 5),
           TextField(
             controller: _sqlController,
             maxLines: 5,
-            decoration: const InputDecoration(labelText: 'Comando SQL', border: OutlineInputBorder()),
+            decoration: const InputDecoration(
+                labelText: 'Comando SQL',
+                border: OutlineInputBorder(),
+                hintText: 'La query deve includere: PerApertura, NumPag, PercRadice, PercResto, Volume'
+            ),
             style: const TextStyle(fontFamily: 'monospace', fontSize: 11, color: Colors.blueAccent),
           ),
           const SizedBox(height: 5),
@@ -210,7 +333,8 @@ order by a.titolo,a.strumento
             ),
             const SizedBox(width: 16),
             if (!_isQueryRunning && _queryResults.isNotEmpty)
-              Text('Trovati: ${_queryResults.length}', style: const TextStyle(fontWeight: FontWeight.bold)),
+              Text('Trovati: ${_queryResults.length}',
+                  style: const TextStyle(fontWeight: FontWeight.bold)),
           ],
         ),
         const SizedBox(height: 8),
@@ -218,7 +342,7 @@ order by a.titolo,a.strumento
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 4.0),
             child: Text(
-              'Tempo Query DB (ricerca+sort+transfer): ${_dbQueryTime!.inMilliseconds} ms',
+              'Tempo Query DB: ${_dbQueryTime!.inMilliseconds} ms',
               style: TextStyle(
                 fontWeight: FontWeight.bold,
                 color: _dbQueryTime!.inMilliseconds > 500 ? Colors.red : Colors.green,
@@ -229,14 +353,56 @@ order by a.titolo,a.strumento
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 4.0),
             child: Text(
-              'Tempo Costruzione UI (DataTable2): ${_uiBuildTime!.inMilliseconds} ms',
+              'Tempo Costruzione UI: ${_uiBuildTime!.inMilliseconds} ms',
               style: TextStyle(
                 fontWeight: FontWeight.bold,
                 color: _uiBuildTime!.inMilliseconds > 200 ? Colors.orange.shade800 : Colors.green,
               ),
             ),
           ),
-
+        const SizedBox(height: 8),
+        ElevatedButton.icon(
+          onPressed: () {
+            // Query di esempio che funziona correttamente
+            _sqlController.text = """
+SELECT DISTINCT 
+  Numpag,
+  a.titolo,
+  a.volume,
+  a.ArchivioProvenienza, 
+  a.strumento,
+  primolink,
+  percradice,
+  percresto,
+  percradice||percresto||a.Volume as PerApertura 
+FROM spartiti a
+JOIN spartiti_fts fts ON a.idBra = fts.rowid
+WHERE a.tipoMulti LIKE 'PD%' 
+  AND spartiti_fts MATCH 'girl'
+ORDER BY a.titolo, a.strumento
+LIMIT 20
+""";
+          },
+          icon: const Icon(Icons.lightbulb_outline),
+          label: const Text('Query di Esempio'),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.blue[50],
+            foregroundColor: Colors.blue,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Configurazione attuale:',
+          style: TextStyle(fontSize: 12, color: Colors.grey[700]),
+        ),
+        Text(
+          'Percorso PDF: ${gPercorsoPdf.isNotEmpty ? gPercorsoPdf : "NON CONFIGURATO"}',
+          style: TextStyle(fontSize: 11, fontFamily: 'monospace', color: Colors.blue),
+        ),
+        Text(
+          'Piattaforma: ${Platform.operatingSystem}',
+          style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+        ),
       ],
     );
   }
@@ -254,17 +420,43 @@ order by a.titolo,a.strumento
       columns: columnKeys.map((key) {
         ColumnSize size;
         switch (key.toLowerCase()) {
-          case 'perapertura': size = ColumnSize.M; break;
+          case 'perapertura': size = ColumnSize.L; break;
+          case 'percradice': size = ColumnSize.M; break;
+          case 'percresto': size = ColumnSize.M; break;
           case 'numpag': size = ColumnSize.S; break;
           case 'titolo': size = ColumnSize.L; break;
+          case 'volume': size = ColumnSize.M; break;
+          case 'archivioprovenienza': size = ColumnSize.M; break;
           default: size = ColumnSize.M;
         }
-        return DataColumn2(label: Text(key, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)), size: size);
+        return DataColumn2(
+            label: Text(key, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+            size: size
+        );
       }).toList(),
       rows: _queryResults.map((row) {
         return DataRow2(
           onTap: () => _openPdfFromRow(row),
-          cells: row.values.map((cell) => DataCell(SelectableText(cell?.toString() ?? 'NULL', style: const TextStyle(fontSize: 11)))).toList(),
+          cells: row.entries.map((entry) {
+            final cellValue = entry.value?.toString() ?? 'NULL';
+            final isPath = entry.key.toLowerCase().contains('perc') ||
+                entry.key.toLowerCase().contains('perapertura');
+
+            return DataCell(
+              Tooltip(
+                message: isPath ? 'Clicca per aprire PDF\nPath: $cellValue' : cellValue,
+                child: SelectableText(
+                  cellValue.length > 50 ? '${cellValue.substring(0, 50)}...' : cellValue,
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: isPath ? Colors.blue : null,
+                    fontFamily: isPath ? 'monospace' : null,
+                    fontWeight: entry.key.toLowerCase() == 'titolo' ? FontWeight.bold : null,
+                  ),
+                ),
+              ),
+            );
+          }).toList(),
         );
       }).toList(),
     );

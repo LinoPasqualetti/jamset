@@ -1,0 +1,53 @@
+name: jamsetgemini
+description: "A new Flutter project."
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.3.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # Core & UI
+  cupertino_icons: ^1.0.6
+  data_table_2: ^2.5.10
+
+  # Funzionalità principali
+  csv: ^6.0.0
+  file_picker: ^10.3.3
+  http: ^1.2.1
+  path: ^1.9.0
+  path_provider: ^2.1.3
+  permission_handler: ^11.3.1
+  shared_preferences: ^2.2.3
+  speech_to_text: ^7.3.0
+
+  # Database
+  sqflite: ^2.3.3
+  sqflite_common_ffi: ^2.3.3
+  sqlite3_flutter_libs: ^0.5.22
+
+  # Apertura file e URL
+  url_launcher: ^6.3.0
+
+  # Visualizzatore PDF integrato (per Android)
+  flutter_pdfview: ^1.3.2
+
+  # Dipendenze aggiuntive PER LE MODIFICHE
+  sqflite_common: ^2.3.3  # Aggiunto per compatibilità
+  ffi: ^2.1.2  # Necessario per sqflite_common_ffi su desktop
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/images/
+    - assets/databases/
