@@ -1,6 +1,6 @@
 // lib/screens/gestione_variazioni_screen.dart
 import 'package:flutter/material.dart';
-import 'package:jamset/screens/gestione_dati_globali_screen.dart'; // <-- 1. IMPORT NUOVO MENU
+import 'package:jamsetgemini/screens/gestione_dati_globali_screen.dart'; // <-- 1. IMPORT NUOVO MENU
 import 'test_apertura_file_screen.dart';
 
 class GestioneVariazioniScreen extends StatelessWidget {

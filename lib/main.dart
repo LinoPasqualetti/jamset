@@ -1,19 +1,21 @@
 // lib/main.dart
 import 'package:flutter/material.dart';
-import 'package:jamset/screens/main_screen.dart';
+import 'package:jamsetgemini/screens/main_screen.dart';
 import 'dart:io' show Directory, File, Platform;
 import 'package:flutter/foundation.dart' show kDebugMode, kIsWeb;
+import 'package:path_provider/path_provider.dart';
 
 // --- IMPORT PER DATABASE ---
 import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:flutter/services.dart' show ByteData, rootBundle;
+import 'package:sqlite3_flutter_libs/sqlite3_flutter_libs.dart';
 // ---------------------------
 
-import 'package:jamset/platform/opener_platform_interface.dart';
-import 'package:jamset/platform/android_opener.dart';
-import 'package:jamset/platform/windows_opener.dart';
+import 'package:jamsetgemini/platform/opener_platform_interface.dart';
+import 'package:jamsetgemini/platform/android_opener.dart';
+import 'package:jamsetgemini/platform/windows_opener.dart';
 
 // Chiave globale per accedere al Navigator
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
@@ -31,15 +33,21 @@ String gDatabasePath = ''; // <-- VARIABILE AGGIUNTA
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  
+  // --- FIX PER `Read-only file system` ---
+  // Imposta la directory corrente su una cartella scrivibile prima di usare FFI.
+  if (!kIsWeb) {
+    Directory.current = (await getApplicationDocumentsDirectory()).path;
+  }
 
   // --- Inizializzazione Piattaforma-Specifica di SQLite ---
-  if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
-    // Per il desktop, inizializziamo FFI e impostiamo la factory.
+  if (Platform.isAndroid) {
+    await applyWorkaroundToOpenSqlite3OnOldAndroidVersions();
+  }
+  if (Platform.isWindows || Platform.isLinux || Platform.isMacOS || Platform.isAndroid) {
     sqfliteFfiInit();
     databaseFactory = databaseFactoryFfi;
   }
-  // Per Android e iOS, NON facciamo nulla qui. Il pacchetto `sqlite3_flutter_libs` 
-  // si integra automaticamente con la configurazione di default di `sqflite`.
 
   try {
     if (Platform.isWindows) {
@@ -136,50 +144,48 @@ Future<void> _setupDatabase(Database db, String dbName) async {
       await txn.rawUpdate("UPDATE spartiti SET percResto = REPLACE(percResto, '\\', '/')");
     }
 
-    // 2. Verifica e creazione indice FTS5 (SOLO SU WINDOWS, per ora)
-    if (Platform.isWindows) {
-      final ftsTable = await txn.query('sqlite_master', where: 'type = ? AND name = ?', whereArgs: ['table', 'spartiti_fts']);
-      if (ftsTable.isEmpty) {
-        if (kDebugMode) print("[$dbName] Indice FTS non trovato. Creazione in corso...");
+    // 2. Verifica e creazione indice FTS5 (ORA SU TUTTE LE PIATTAFORME)
+    final ftsTable = await txn.query('sqlite_master', where: 'type = ? AND name = ?', whereArgs: ['table', 'spartiti_fts']);
+    if (ftsTable.isEmpty) {
+      if (kDebugMode) print("[$dbName] Indice FTS non trovato. Creazione in corso...");
 
-        // Crea la tabella virtuale
-        await txn.execute('''
-          CREATE VIRTUAL TABLE spartiti_fts USING fts5 (
-            titolo, autore, volume, ArchivioProvenienza,
-            content = \'spartiti\', content_rowid = \'IdBra\'
-          );
-        ''');
+      // Crea la tabella virtuale
+      await txn.execute('''
+        CREATE VIRTUAL TABLE spartiti_fts USING fts5 (
+          titolo, autore, volume, ArchivioProvenienza,
+          content = \'spartiti\', content_rowid = \'IdBra\'
+        );
+      ''');
 
-        // Popola l'indice
-        await txn.execute('''
+      // Popola l'indice
+      await txn.execute('''
+        INSERT INTO spartiti_fts(rowid, titolo, autore, volume, ArchivioProvenienza)
+        SELECT IdBra, titolo, autore, volume, ArchivioProvenienza FROM spartiti;
+      ''');
+
+      // Crea i trigger
+      await txn.execute('''
+        CREATE TRIGGER spartiti_ai AFTER INSERT ON spartiti BEGIN
           INSERT INTO spartiti_fts(rowid, titolo, autore, volume, ArchivioProvenienza)
-          SELECT IdBra, titolo, autore, volume, ArchivioProvenienza FROM spartiti;
-        ''');
+          VALUES (new.IdBra, new.titolo, new.autore, new.volume, new.ArchivioProvenienza);
+        END;
+      ''');
+      await txn.execute('''
+        CREATE TRIGGER spartiti_ad AFTER DELETE ON spartiti BEGIN
+          INSERT INTO spartiti_fts(spartiti_fts, rowid, titolo, autore, volume, ArchivioProvenienza) 
+          VALUES(\'delete\', old.IdBra, old.titolo, old.autore, old.volume, old.ArchivioProvenienza);
+        END;
+      ''');
+      await txn.execute('''
+        CREATE TRIGGER spartiti_au AFTER UPDATE ON spartiti BEGIN
+          INSERT INTO spartiti_fts(spartiti_fts, rowid, titolo, autore, volume, ArchivioProvenienza) 
+          VALUES(\'delete\', old.IdBra, old.titolo, old.autore, old.volume, old.ArchivioProvenienza);
+          INSERT INTO spartiti_fts(rowid, titolo, autore, volume, ArchivioProvenienza)
+          VALUES (new.IdBra, new.titolo, new.autore, new.volume, new.ArchivioProvenienza);
+        END;
+      ''');
 
-        // Crea i trigger
-        await txn.execute('''
-          CREATE TRIGGER spartiti_ai AFTER INSERT ON spartiti BEGIN
-            INSERT INTO spartiti_fts(rowid, titolo, autore, volume, ArchivioProvenienza)
-            VALUES (new.IdBra, new.titolo, new.autore, new.volume, new.ArchivioProvenienza);
-          END;
-        ''');
-        await txn.execute('''
-          CREATE TRIGGER spartiti_ad AFTER DELETE ON spartiti BEGIN
-            INSERT INTO spartiti_fts(spartiti_fts, rowid, titolo, autore, volume, ArchivioProvenienza) 
-            VALUES(\'delete\', old.IdBra, old.titolo, old.autore, old.volume, old.ArchivioProvenienza);
-          END;
-        ''');
-        await txn.execute('''
-          CREATE TRIGGER spartiti_au AFTER UPDATE ON spartiti BEGIN
-            INSERT INTO spartiti_fts(spartiti_fts, rowid, titolo, autore, volume, ArchivioProvenienza) 
-            VALUES(\'delete\', old.IdBra, old.titolo, old.autore, old.volume, old.ArchivioProvenienza);
-            INSERT INTO spartiti_fts(rowid, titolo, autore, volume, ArchivioProvenienza)
-            VALUES (new.IdBra, new.titolo, new.autore, new.volume, new.ArchivioProvenienza);
-          END;
-        ''');
-
-        if (kDebugMode) print("[$dbName] Creazione indice FTS e triggers completata.");
-      }
+      if (kDebugMode) print("[$dbName] Creazione indice FTS e triggers completata.");
     }
   });
 }
@@ -190,7 +196,7 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       navigatorKey: navigatorKey,
-      title: 'JamSet App',
+      title: 'JamsetGemini App',
       theme: ThemeData(colorScheme: ColorScheme.fromSeed(seedColor: Colors.blueGrey, primary: Colors.blueAccent, secondary: Colors.amber)),
       home: const MainScreen(),
     );

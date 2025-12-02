@@ -7,8 +7,8 @@ import 'package:flutter/services.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:data_table_2/data_table_2.dart';
 
-import 'package:jamset/main.dart';
-import 'package:jamset/platform/opener_platform_interface.dart';
+import 'package:jamsetgemini/main.dart';
+import 'package:jamsetgemini/platform/opener_platform_interface.dart';
 
 class FunzioniVariazioneDatiScreen extends StatefulWidget {
   const FunzioniVariazioneDatiScreen({super.key});
@@ -38,9 +38,11 @@ class _FunzioniVariazioneDatiScreenState extends State<FunzioniVariazioneDatiScr
     super.initState();
 
     final String defaultQuery = """
-select distinct Numpag,titolo,volume,percradice||percresto||Volume as PerApertura,ArchivioProvenienza, strumento,primolink, percradice,percresto 
-from spartiti where tipoMulti like 'PD%' and titolo like 'love%'
-order by titolo,strumento
+select distinct Numpag,a.titolo,a.volume,percradice||percresto||a.Volume as PerApertura,a.ArchivioProvenienza, strumento,primolink, percradice,percresto 
+from spartiti a
+JOIN spartiti_fts fts on a.idBra=fts.rowid
+ where a.tipoMulti like 'PD%' and spartiti_fts match 'girl ipanema'
+order by a.titolo,a.strumento
 """;
 
     _sqlController = TextEditingController(text: defaultQuery);

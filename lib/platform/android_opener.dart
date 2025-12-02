@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:jamset/main.dart'; // Importa main.dart per accedere alla navigatorKey globale
-import 'package:jamset/platform/opener_platform_interface.dart';
-import 'package:jamset/screens/pdf_viewer_android_screen.dart';
+import 'package:jamsetgemini/main.dart'; // Importa main.dart per accedere alla navigatorKey globale
+import 'package:jamsetgemini/platform/opener_platform_interface.dart';
+import 'package:jamsetgemini/screens/pdf_viewer_android_screen.dart';
 
 class AndroidOpener implements OpenerPlatformInterface {
   @override

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:sqflite/sqflite.dart';
 
-import 'package:jamset/main.dart'; // <-- IMPORT CORRETTO
+import 'package:jamsetgemini/main.dart'; // <-- IMPORT CORRETTO
 import 'VariaCatalogo.dart';
 
 class GestisciElencoCataloghi extends StatefulWidget {

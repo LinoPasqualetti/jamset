@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:jamset/screens/csv_viewer_screen.dart';
-import 'package:jamset/screens/gestione_variazioni_screen.dart';
-import 'package:jamset/screens/funzioni_variazione_dati_screen.dart'; // <-- 1. IMPORT
+import 'package:jamsetgemini/screens/csv_viewer_screen.dart';
+import 'package:jamsetgemini/screens/gestione_variazioni_screen.dart';
+import 'package:jamsetgemini/screens/funzioni_variazione_dati_screen.dart'; // <-- 1. IMPORT
 
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
@@ -71,7 +71,7 @@ class _HomePage extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('JamSet - Ricerca Home Page'),
+        title: const Text('JamsetGemini - Ricerca Home Page'),
         backgroundColor: Colors.blueGrey[700],
         foregroundColor: Colors.yellowAccent,
         elevation: 0,
@@ -95,7 +95,7 @@ class _HomePage extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: <Widget>[
                   const Text(
-                    'Benvenuto in JamSet!',
+                    'Benvenuto in JamsetGemini!',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       fontSize: 34,

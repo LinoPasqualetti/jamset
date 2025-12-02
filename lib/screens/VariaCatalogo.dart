@@ -5,8 +5,8 @@ import 'package:sqflite/sqflite.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:path/path.dart' as p;
 
-import 'package:jamset/main.dart'; // 1. IMPORT CORRETTO
-import 'package:jamset/screens/lista_spartiti_catalogo.dart'; // 1. IMPORT CORRETTO
+import 'package:jamsetgemini/main.dart'; // 1. IMPORT CORRETTO
+import 'package:jamsetgemini/screens/lista_spartiti_catalogo.dart'; // 1. IMPORT CORRETTO
 
 class VariaCatalogoScreen extends StatefulWidget {
   final Map<String, dynamic>? initialData;

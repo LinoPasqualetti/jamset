@@ -19,6 +19,6 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "jamset"
+rootProject.name = "jamsetgemini"
 include(":app")
  

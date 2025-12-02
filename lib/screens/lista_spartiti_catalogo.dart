@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:data_table_2/data_table_2.dart';
 
-import 'package:jamset/main.dart'; // Import corretto
+import 'package:jamsetgemini/main.dart'; // Import corretto
 
 class ListaSpartitiCatalogoScreen extends StatefulWidget {
   final int catalogoId;
