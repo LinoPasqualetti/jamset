@@ -40,22 +40,11 @@ class _FunzioniVariazioneDatiScreenState extends State<FunzioniVariazioneDatiScr
 
     // QUERY ORIGINALE ESATTA
     final String defaultQuery = """
-SELECT DISTINCT 
-  Numpag,
-  a.titolo,
-  a.volume,
-  a.ArchivioProvenienza, 
-  a.strumento,
-  primolink,
-  percradice,
-  percresto,
-  percradice||percresto||a.Volume as PerApertura 
-FROM spartiti a
-JOIN spartiti_fts fts ON a.idBra = fts.rowid
-WHERE a.tipoMulti LIKE 'PD%' 
-  AND spartiti_fts MATCH 'girl ipanema'
-ORDER BY a.titolo, a.strumento
-""";
+             SELECT DISTINCT   Numpag,  a.titolo,  a.volume,  a.ArchivioProvenienza,  a.strumento,  
+             primolink,'${gPercorsoPdf}' percradice,  percresto,
+            '${gPercorsoPdf}'||percresto||a.Volume as PerApertura
+             FROM spartiti a JOIN spartiti_fts fts ON a.idBra = fts.rowid WHERE a.tipoMulti LIKE 'PD%'
+             AND spartiti_fts MATCH 'girl ipanema'ORDER BY a.titolo, a.strumento """  ;
 
     _sqlController = TextEditingController(text: defaultQuery);
     _loadTableInfo();
@@ -365,23 +354,12 @@ ORDER BY a.titolo, a.strumento
           onPressed: () {
             // Query di esempio che funziona correttamente
             _sqlController.text = """
-SELECT DISTINCT 
-  Numpag,
-  a.titolo,
-  a.volume,
-  a.ArchivioProvenienza, 
-  a.strumento,
-  primolink,
-  percradice,
-  percresto,
-  percradice||percresto||a.Volume as PerApertura 
-FROM spartiti a
-JOIN spartiti_fts fts ON a.idBra = fts.rowid
-WHERE a.tipoMulti LIKE 'PD%' 
-  AND spartiti_fts MATCH 'girl'
-ORDER BY a.titolo, a.strumento
-LIMIT 20
-""";
+
+            SELECT DISTINCT   Numpag,  a.titolo,  a.volume,  a.ArchivioProvenienza,  a.strumento,
+            primolink,'${gPercorsoPdf}' percradice,  percresto,
+            '${gPercorsoPdf}'||percresto||a.Volume as PerApertura
+            FROM spartiti a JOIN spartiti_fts fts ON a.idBra = fts.rowid WHERE a.tipoMulti LIKE 'PD%'
+            AND spartiti_fts MATCH 'girl ipanema'ORDER BY a.titolo, a.strumento """  ;
           },
           icon: const Icon(Icons.lightbulb_outline),
           label: const Text('Query di Esempio'),
