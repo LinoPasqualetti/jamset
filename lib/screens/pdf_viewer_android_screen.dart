@@ -1,64 +1,82 @@
 ﻿import 'package:flutter/material.dart';
 import 'package:open_file/open_file.dart';
+import 'package:flutter_pdfview/flutter_pdfview.dart';
+import 'dart:async';
 
-class PdfViewerAndroidScreen extends StatelessWidget {
+class PdfViewerScreen extends StatefulWidget {
   final String filePath;
-  
-  const PdfViewerAndroidScreen({super.key, required this.filePath});
-  
+  final int initialPage;
+
+  const PdfViewerScreen({
+    super.key,
+    required this.filePath,
+    this.initialPage = 0, // Le pagine nel viewer sono 0-indexed
+  });
+
+  @override
+  State<PdfViewerScreen> createState() => _PdfViewerScreenState();
+}
+
+class _PdfViewerScreenState extends State<PdfViewerScreen> {
+  final Completer<PDFViewController> _controller = Completer<PDFViewController>();
+  int? pages = 0;
+  bool isReady = false;
+  String errorMessage = '';
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Visualizza PDF'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.open_in_new),
-            onPressed: () => _openWithExternalApp(filePath, context),
+        title: Text(widget.filePath.split('/').last), // Mostra il nome del file
+      ),
+      body: Stack(
+        children: <Widget>[
+          PDFView(
+            filePath: widget.filePath,
+            enableSwipe: true,
+            swipeHorizontal: false,
+            autoSpacing: false,
+            pageFling: true,
+            pageSnap: true,
+            defaultPage: widget.initialPage,
+            fitPolicy: FitPolicy.BOTH,
+            preventLinkNavigation: false, // Per futuri link interni
+            onRender: (pages) {
+              setState(() {
+                this.pages = pages;
+                isReady = true;
+              });
+            },
+            onError: (error) {
+              setState(() {
+                errorMessage = error.toString();
+              });
+              print(error.toString());
+            },
+            onPageError: (page, error) {
+              setState(() {
+                errorMessage = '$page: ${error.toString()}';
+              });
+              print('$page: ${error.toString()}');
+            },
+            onViewCreated: (PDFViewController pdfViewController) {
+              _controller.complete(pdfViewController);
+            },
+            onPageChanged: (int? page, int? total) {
+              // print('page change: $page/$total');
+            },
           ),
+          errorMessage.isEmpty
+              ? !isReady
+              ? const Center(
+            child: CircularProgressIndicator(),
+          )
+              : Container()
+              : Center(
+            child: Text(errorMessage),
+          )
         ],
       ),
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.picture_as_pdf, size: 100, color: Colors.red),
-            const SizedBox(height: 20),
-            Text(
-              'File PDF:',
-              style: Theme.of(context).textTheme.headlineMedium,
-            ),
-            const SizedBox(height: 10),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: SelectableText(
-                filePath,
-                style: const TextStyle(fontFamily: 'monospace'),
-                textAlign: TextAlign.center,
-              ),
-            ),
-            const SizedBox(height: 30),
-            ElevatedButton.icon(
-              icon: const Icon(Icons.open_in_browser),
-              label: const Text('Apri con app esterna'),
-              onPressed: () => _openWithExternalApp(filePath, context),
-            ),
-          ],
-        ),
-      ),
     );
-  }
-  
-  Future<void> _openWithExternalApp(String path, BuildContext context) async {
-    final result = await OpenFile.open(path);
-    
-    if (result.type != ResultType.done) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Errore: ${result.message}'),
-          backgroundColor: Colors.red,
-        ),
-      );
-    }
   }
 }
