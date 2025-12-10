@@ -13,69 +13,84 @@ class FileOpener {
     required String volume,
     required String tipoMulti,
     int page = 1,
-    String? customBasePath,
-  }) async {
+  })
+  async {
+    debugPrint('📂 FILE OPENER - Versione ULTRA-SICURA');
+
+// 1. Pulisci TUTTI i separatori
+    String cleanBase = gPercorsoPdf.trim();
+    String cleanResto = percResto.trim();
+
+// Per Android/Unix
+    if (Platform.isAndroid || Platform.isIOS || Platform.isLinux || Platform.isMacOS) {
+// Sostituisci tutti i backslash con forward slash
+      cleanBase = cleanBase.replaceAll(r'\', '/');
+      cleanResto = cleanResto.replaceAll(r'\', '/');
+
+// Rimuovi TUTTI i slash finali
+      cleanBase = cleanBase.replaceAll(RegExp(r'/+$'), '');
+      cleanResto = cleanResto.replaceAll(RegExp(r'^/+|/+$'), '');
+    }
+// Per Windows
+    else if (Platform.isWindows) {
+// Sostituisci tutti i forward slash con backslash
+      cleanBase = cleanBase.replaceAll('/', r'\');
+      cleanResto = cleanResto.replaceAll('/', r'\');
+
+// Rimuovi TUTTI i backslash finali
+      cleanBase = cleanBase.replaceAll(RegExp(r'\\+$'), '');
+      cleanResto = cleanResto.replaceAll(RegExp(r'^\\+|\\+$'), '');
+    }
+
+    debugPrint('Base: "$cleanBase"');
+    debugPrint('Resto: "$cleanResto"');
+    debugPrint('Volume: "$volume"');
+
+// 2. Usa SEMPRE path.join (gestisce automaticamente i separatori)
+    final fullPath = p.join(cleanBase, cleanResto, volume);
+    debugPrint('Percorso finale (path.join): "$fullPath"');
+
+// 3. Verifica e apri
     try {
-      print('\n📂 FILE OPENER');
-      print('Piattaforma: ${Platform.operatingSystem}');
-      print('TipoMulti: $tipoMulti');
-      print('Volume: $volume');
-      print('PercResto: $percResto');
-
-      final basePath = customBasePath ?? gPercorsoPdf;
-
-      if (basePath.isEmpty) {
-        _showSnackBar(context, '❌ Percorso base non configurato', Colors.red);
-        return;
-      }
-
-      if (volume.isEmpty || percResto.isEmpty) {
-        _showSnackBar(context, '❌ Volume o PercResto vuoti', Colors.red);
-        return;
-      }
-
-      final fullPath = _buildFilePath(basePath, percResto, volume);
-      print('Percorso: $fullPath');
-
       final file = File(fullPath);
       final exists = await file.exists();
 
-      if (!exists) {
-        _showSnackBar(context, '❌ File non trovato: ${p.basename(volume)}', Colors.red);
-        return;
-      }
+      if (exists) {
+        debugPrint('✅ File trovato');
+        await OpenerPlatformInterface.instance.openPdf(
+          context: context,
+          filePath: fullPath,
+          page: page,
+        );
+      } else {
+        debugPrint('❌ File non trovato');
 
-      print('✅ File trovato (${file.lengthSync()} bytes)');
-
-      // Loading
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (context) => const Center(child: CircularProgressIndicator()),
-      );
-
-      try {
-        if (_isPdfFile(tipoMulti, volume)) {
-          print('📄 Apertura PDF...');
-          await OpenerPlatformInterface.instance.openPdf(
-            context: context,
-            filePath: fullPath,
-            page: page,
-          );
-        } else {
-          print('🔧 Apertura con app predefinita...');
-          await _openWithSystemDefault(fullPath);
+// Mostra percorso alternativo debug
+        debugPrint('DEBUG Percorsi alternativi:');
+        debugPrint('  1. $cleanBase/$cleanResto/$volume');
+        if (Platform.isWindows) {
+          debugPrint('  2. $cleanBase\\$cleanResto\\$volume');
         }
 
-        Navigator.of(context, rootNavigator: true).pop();
-
-      } catch (e) {
-        Navigator.of(context, rootNavigator: true).pop();
-        _showSnackBar(context, '❌ Errore apertura: ${e.toString()}', Colors.red);
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('File non trovato: $volume'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
       }
-
     } catch (e) {
-      _showSnackBar(context, '💥 Errore: ${e.toString()}', Colors.red);
+      debugPrint('❌ Errore: $e');
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Errore: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
