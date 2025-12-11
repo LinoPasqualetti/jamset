@@ -1,4 +1,4 @@
-﻿/// funzioni_variazione_dati_screen.dart - VERSIONE CORRETTA CON FIX FTS
+﻿// lib/screens/funzioni_variazione_dati_screen.dart - VERSIONE CORRETTA
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -20,16 +20,19 @@ class FunzioniVariazioneDatiScreen extends StatefulWidget {
 
 class _FunzioniVariazioneDatiScreenState extends State<FunzioniVariazioneDatiScreen>
     with AutomaticKeepAliveClientMixin {
-  bool _isLoading = true;
   bool _isQueryRunning = false;
   String? _error;
   List<Map<String, dynamic>> _queryResults = [];
-  List<String> _tableFields = [];
 
   Duration? _dbQueryTime;
   Duration? _uiBuildTime;
 
-  late final TextEditingController _sqlController;
+  // Controller per i campi di ricerca
+  late final TextEditingController _ricercaController;
+  late final TextEditingController _strumentoController;
+  late final TextEditingController _volumeController;
+  late final TextEditingController _provenienzaController;
+  late final TextEditingController _tipoMultiController;
 
   @override
   bool get wantKeepAlive => true;
@@ -37,62 +40,83 @@ class _FunzioniVariazioneDatiScreenState extends State<FunzioniVariazioneDatiScr
   @override
   void initState() {
     super.initState();
-
-    // QUERY CORRETTA - FIX FTS
-    final String defaultQuery = """
-      SELECT DISTINCT Numpag,a.titolo, a.volume,  a.ArchivioProvenienza,a.strumento, primolink, '${gPercorsoPdf}' percradice, percresto, '${gPercorsoPdf}' || percresto || '/' || a.Volume as PerApertura
-      FROM spartiti a   WHERE a.id_univoco_globale IN ( SELECT rowid FROM spartiti_fts  WHERE spartiti_fts MATCH 
-      'girl ipanema' )  AND (a.tipoMulti LIKE 'PDF%' OR a.tipoMulti LIKE 'PD%' OR a.tipoMulti IS NULL) ORDER BY a.titolo, a.strumento    """;
-
-    _sqlController = TextEditingController(text: defaultQuery);
-    _loadTableInfo();
+    _ricercaController = TextEditingController();
+    _strumentoController = TextEditingController();
+    _volumeController = TextEditingController();
+    _provenienzaController = TextEditingController();
+    _tipoMultiController = TextEditingController();
   }
 
   @override
   void dispose() {
-    _sqlController.dispose();
+    _ricercaController.dispose();
+    _strumentoController.dispose();
+    _volumeController.dispose();
+    _provenienzaController.dispose();
+    _tipoMultiController.dispose();
     super.dispose();
   }
 
-  Future<void> _loadTableInfo() async {
-    if (dbCatalogoAttivo == null) {
-      setState(() {
-        _error = "Database non disponibile. Controllare l'errore all'avvio.";
-        _isLoading = false;
-      });
-      return;
+  // ================================================
+  // FUNZIONI HELPER PRIVATE
+  // ================================================
+
+  String _buildFtsQuery(String searchText) {
+    final text = searchText.trim();
+    if (text.isEmpty) return '';
+
+    // Lista di operatori FTS che l'utente potrebbe usare intenzionalmente
+    final ftsOperators = [' OR ', ' AND ', ' NOT ', ' NEAR(', '*', '"', '(', ')', '-'];
+
+    // Controlla se l'utente sta usando operatori avanzati
+    final hasAdvancedOperators = ftsOperators.any((op) => text.contains(op));
+
+    if (hasAdvancedOperators) {
+      // L'utente sa cosa sta facendo, lascia il testo com'è
+      debugPrint('🔧 Ricerca avanzata rilevata, testo lasciato invariato');
+      return text;
     }
-    try {
-      // Verifica se FTS esiste
-      final ftsExists = await dbCatalogoAttivo!.rawQuery(
-          "SELECT name FROM sqlite_master WHERE type='table' AND name='spartiti_fts'"
-      );
 
-      if (ftsExists.isEmpty) {
-        setState(() {
-          _error = "⚠️ Tabella FTS non trovata.\nL'indice di ricerca full-text non è configurato.\nVerifica l'inizializzazione del database.";
-          _isLoading = false;
-        });
-        return;
-      }
+    // Splitta in parole, filtra vuoti e pulisci
+    final words = text.split(' ')
+        .where((word) => word.trim().isNotEmpty)
+        .map((word) => word.trim())
+        .toList();
 
-      final tableInfo = await dbCatalogoAttivo!.rawQuery('PRAGMA table_info(spartiti);');
-      final fields = tableInfo.map((row) => row['name'] as String).toList();
+    if (words.isEmpty) return '';
 
-      if (mounted) {
-        setState(() {
-          _tableFields = fields;
-          _isLoading = false;
-        });
+    // Se è una singola parola, aggiungi wildcard finale se non c'è già
+    if (words.length == 1) {
+      final word = words[0];
+      // Aggiungi wildcard finale se:
+      // 1. La parola ha almeno 3 caratteri
+      // 2. Non termina già con wildcard
+      // 3. Non contiene altri operatori speciali
+      if (word.length >= 3 &&
+          !word.endsWith('*') &&
+          !word.contains('"') &&
+          !word.contains('(') &&
+          !word.contains(')')) {
+        return '$word*';
       }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _error = "Errore nel leggere la struttura della tabella: \n${e.toString()}";
-          _isLoading = false;
-        });
-      }
+      return word;
     }
+
+    // Per più parole: unisci con AND e aggiungi wildcard alle parole lunghe
+    final processedWords = words.map((word) {
+      // Aggiungi wildcard finale alle parole con almeno 3 caratteri
+      if (word.length >= 3 &&
+          !word.endsWith('*') &&
+          !word.contains('"')) {
+        return '$word*';
+      }
+      return word;
+    }).toList();
+
+    final ftsQuery = processedWords.join(' AND ');
+
+    debugPrint('🔧 Ricerca trasformata: "$text" -> "$ftsQuery"');
+    return ftsQuery;
   }
 
   Future<void> _executeQuery() async {
@@ -106,87 +130,114 @@ class _FunzioniVariazioneDatiScreenState extends State<FunzioniVariazioneDatiScr
     });
 
     try {
-      final String query = _sqlController.text.trim();
+      final whereClauses = <String>[];
+      final whereArgs = <dynamic>[];
 
-      // STAMPA DELLA QUERY CON COLORI E FORMATTAZIONE
-      debugPrint("\n" + "="*80);
-      debugPrint("🚀 QUERY SQL ESEGUITA:");
-      debugPrint("="*80);
-      debugPrint(query);
-      debugPrint("="*80);
+      // 1. RICERCA FTS CON AND SU TUTTE LE PAROLE
+      if (_ricercaController.text.isNotEmpty) {
+        final ftsQuery = _buildFtsQuery(_ricercaController.text);
 
-      // Mostra anche all'utente (in formato più leggibile)
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            "Query eseguita: ${query.length > 50 ? '${query.substring(0, 50)}...' : query}",
-            style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
-          ),
-          duration: const Duration(seconds: 3),
-          backgroundColor: Colors.blue[800],
-        ),
-      );
-
-      // Verifica se FTS esiste
-      final ftsCheck = await dbCatalogoAttivo!.rawQuery(
-          "SELECT name FROM sqlite_master WHERE type='table' AND name='spartiti_fts'"
-      );
-
-      if (ftsCheck.isEmpty) {
-        setState(() {
-          _error = "❌ ERRORE: Tabella spartiti_fts non trovata.\nLa ricerca FTS non è disponibile.\nRiavvia l'app o ricrea gli indici FTS.";
-          _isQueryRunning = false;
-        });
-        return;
+        whereClauses.add('a.id_univoco_globale IN (SELECT rowid FROM spartiti_fts WHERE spartiti_fts MATCH ?)');
+        whereArgs.add(ftsQuery);
       }
+
+      // 2. FILTRI LIKE
+      if (_tipoMultiController.text.isNotEmpty) {
+        whereClauses.add('a.tipoMulti LIKE ?');
+        whereArgs.add(_tipoMultiController.text);
+      }
+      if (_volumeController.text.isNotEmpty) {
+        whereClauses.add('a.volume LIKE ?');
+        whereArgs.add(_volumeController.text);
+      }
+      if (_provenienzaController.text.isNotEmpty) {
+        whereClauses.add('a.ArchivioProvenienza LIKE ?');
+        whereArgs.add(_provenienzaController.text);
+      }
+      if (_strumentoController.text.isNotEmpty) {
+        whereClauses.add('a.strumento LIKE ?');
+        whereArgs.add(_strumentoController.text);
+      }
+
+      // 3. COSTRUISCI QUERY FINALE
+      String whereStatement = whereClauses.isNotEmpty ? 'WHERE ${whereClauses.join(' AND ')}' : '';
+
+      final sanitizedPercorsoPdf = gPercorsoPdf.replaceAll("'", "''");
+
+      final sql = """
+        SELECT DISTINCT 
+          a.titolo,
+          a.NumPag,
+          a.volume,
+          a.ArchivioProvenienza,
+          a.strumento,
+          a.autore,
+          a.PrimoLink,
+          a.PercResto,
+          a.TipoMulti,
+          a.id_univoco_globale,
+          '$sanitizedPercorsoPdf' as percradice,
+          '$sanitizedPercorsoPdf' || COALESCE(a.PercResto, '') || '/' || a.Volume as PerApertura
+        FROM spartiti a
+        $whereStatement
+        AND (a.TipoMulti IS NULL OR a.TipoMulti LIKE 'PDF%' OR a.TipoMulti LIKE 'PD%')
+        ORDER BY a.titolo COLLATE NOCASE, a.strumento
+        LIMIT 100
+      """;
+
+      // DEBUG DETTAGLIATO
+      debugPrint("\n" + "="*80);
+      debugPrint("🔍 RICERCA ESEGUITA:");
+      debugPrint("="*80);
+      debugPrint("Testo ricerca: ${_ricercaController.text}");
+      debugPrint("Query FTS generata: ${whereArgs.isNotEmpty ? whereArgs[0] : 'Nessuna'}");
+      debugPrint("SQL completo: $sql");
+      debugPrint("="*80);
 
       final dbStopwatch = Stopwatch()..start();
-      final results = await dbCatalogoAttivo!.rawQuery(query);
+      final results = await dbCatalogoAttivo!.rawQuery(sql, whereArgs);
       dbStopwatch.stop();
 
-      // STAMPA DEI RISULTATI
-      debugPrint("\n📊 RISULTATI DELLA QUERY:");
-      debugPrint("   Record trovati: ${results.length}");
+      // Normalizza percorsi per il display
+      final normalizedResults = results.map((row) {
+        final newRow = Map<String, dynamic>.from(row);
 
-      if (results.isNotEmpty) {
-        debugPrint("\n   STRUTTURA COLONNE:");
-        final firstRow = results.first;
-        for (var key in firstRow.keys) {
-          debugPrint("   - $key: ${firstRow[key]}");
+        // Normalizza PercResto
+        if (newRow.containsKey('PercResto') && newRow['PercResto'] != null) {
+          newRow['PercResto'] = _normalizePath(newRow['PercResto'] as String);
         }
 
-        debugPrint("\n   PRIMI 3 RISULTATI:");
-        for (var i = 0; i < (results.length > 3 ? 3 : results.length); i++) {
-          debugPrint("\n   [Risultato ${i + 1}]");
-          final row = results[i];
-          for (var key in row.keys) {
-            final value = row[key]?.toString() ?? 'NULL';
-            debugPrint("     $key: ${value.length > 50 ? '${value.substring(0, 50)}...' : value}");
-          }
+        // Normalizza PerApertura
+        if (newRow.containsKey('PerApertura') && newRow['PerApertura'] != null) {
+          newRow['PerApertura'] = _normalizePath(newRow['PerApertura'] as String);
         }
-      }
+
+        return newRow;
+      }).toList();
 
       if (mounted) {
         final uiStopwatch = Stopwatch()..start();
         setState(() {
-          _queryResults = results;
+          _queryResults = normalizedResults;
           _isQueryRunning = false;
           _dbQueryTime = dbStopwatch.elapsed;
         });
 
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          uiStopwatch.stop();
           if (mounted) {
-            setState(() {
-              _uiBuildTime = uiStopwatch.elapsed;
-            });
+            setState(() => _uiBuildTime = uiStopwatch.elapsed);
           }
         });
       }
+
+      debugPrint('✅ Risultati: ${results.length} record in ${dbStopwatch.elapsedMilliseconds}ms');
+
     } catch (e) {
+      debugPrint('❌ Errore ricerca: $e');
+
       if (mounted) {
         setState(() {
-          _error = "Errore esecuzione query: \n${e.toString()}\n\nSuggerimento: Verifica la sintassi SQL e che le tabelle esistano.";
+          _error = "Errore ricerca: ${e.toString()}";
           _queryResults = [];
           _isQueryRunning = false;
         });
@@ -195,509 +246,295 @@ class _FunzioniVariazioneDatiScreenState extends State<FunzioniVariazioneDatiScr
   }
 
   Future<void> _openPdfFromRow(Map<String, dynamic> rowData) async {
-    // Normalizza le chiavi a lowercase
-    final lowerCaseRowData = {for (var k in rowData.keys) k.toLowerCase(): rowData[k]};
-
-    // VERIFICA I CAMPI NECESSARI
-    if (!lowerCaseRowData.containsKey('percresto') ||
-        !lowerCaseRowData.containsKey('volume')) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('ERRORE: La query deve contenere: PercResto e Volume'),
-        backgroundColor: Colors.red,
-      ));
-      return;
-    }
-
-    final percResto = lowerCaseRowData['percresto'] as String?;
-    final volume = lowerCaseRowData['volume'] as String?;
-    final pageNum = lowerCaseRowData['numpag'];
-
-    if (percResto == null || percResto.isEmpty || volume == null || volume.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('ERRORE: PercResto o Volume sono vuoti.'),
-        backgroundColor: Colors.red,
-      ));
-      return;
-    }
-
-    final page = int.tryParse(pageNum?.toString() ?? '1') ?? 1;
-
-    // Controlla se percorso PDF è configurato
-    if (gPercorsoPdf.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('ERRORE: Percorso PDF non configurato. Vai nelle Impostazioni.'),
-        backgroundColor: Colors.red,
-      ));
-      return;
-    }
-
-    // Costruisci il percorso corretto
-    final fullPath = _buildCorrectPdfPath(gPercorsoPdf, percResto, volume);
-
-    debugPrint('=== APERTURA PDF ===');
-    debugPrint('Piattaforma: ${Platform.operatingSystem}');
-    debugPrint('Base: $gPercorsoPdf');
-    debugPrint('Resto: $percResto');
-    debugPrint('Volume: $volume');
-    debugPrint('Path: $fullPath');
-    debugPrint('Pagina: $page');
-
-    // Verifica se il file esiste
     try {
-      final file = File(fullPath);
-      final exists = await file.exists();
-      debugPrint('File esiste? $exists');
+      final lowerCaseRowData = {for (var k in rowData.keys) k.toLowerCase(): rowData[k]};
 
-      if (!exists) {
-        // Prova percorsi alternativi
-        debugPrint('Prova percorsi alternativi...');
+      // Usa PerApertura se disponibile
+      String? filePath = lowerCaseRowData['perapertura'] as String?;
+      final pageNum = lowerCaseRowData['numpag'];
 
-        // 1. Prova con path.join
-        final pathJoinResult = p.join(gPercorsoPdf, percResto, volume);
-        debugPrint('Path.join: $pathJoinResult');
+      if (filePath == null || filePath.isEmpty) {
+        // Fallback: costruisci da componenti
+        final percResto = lowerCaseRowData['percresto'] as String? ?? '';
+        final volume = lowerCaseRowData['volume'] as String? ?? '';
 
-        // 2. Prova normalizzato
-        final normalized = _normalizeAndJoin(gPercorsoPdf, percResto, volume);
-        debugPrint('Normalizzato: $normalized');
-
-        // Se esiste uno dei percorsi alternativi, usalo
-        final altFile1 = File(pathJoinResult);
-        final altFile2 = File(normalized);
-
-        if (await altFile1.exists()) {
-          debugPrint('✅ Trovato con path.join');
-          await OpenerPlatformInterface.instance.openPdf(
-            context: context,
-            filePath: pathJoinResult,
-            page: page,
-          );
-          return;
-        } else if (await altFile2.exists()) {
-          debugPrint('✅ Trovato con percorso normalizzato');
-          await OpenerPlatformInterface.instance.openPdf(
-            context: context,
-            filePath: normalized,
-            page: page,
-          );
+        if (volume.isEmpty) {
+          _showError('Volume non specificato');
           return;
         }
 
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('File non trovato: $volume'),
-          backgroundColor: Colors.orange,
-        ));
-        return;
+        filePath = _buildPdfPath(gPercorsoPdf, percResto, volume);
       }
+
+      final page = int.tryParse(pageNum?.toString().trim() ?? '1') ?? 1;
+
+      debugPrint('📂 Apertura PDF:');
+      debugPrint('   Percorso: $filePath');
+      debugPrint('   Pagina: $page');
+
+      await OpenerPlatformInterface.instance.openPdf(
+        context: context,
+        filePath: filePath,
+        page: page,
+      );
+
     } catch (e) {
-      debugPrint('❌ Errore verifica file: $e');
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('Errore accesso file: $e'),
-        backgroundColor: Colors.red,
-      ));
-      return;
+      debugPrint('❌ Errore apertura PDF: $e');
+      _showError('Impossibile aprire il PDF: ${e.toString()}');
+    }
+  }
+
+  String _buildPdfPath(String basePath, String percResto, String volume) {
+    // Normalizza percorsi
+    String cleanBase = _normalizePath(basePath);
+    String cleanResto = _normalizePath(percResto);
+    String cleanVolume = volume.trim();
+
+    // Costruisci con separatori corretti
+    if (Platform.isWindows) {
+      return '$cleanBase\\$cleanResto\\$cleanVolume'
+          .replaceAll(r'\\', r'\')
+          .replaceAll('//', r'\');
+    } else {
+      return '$cleanBase/$cleanResto/$cleanVolume'
+          .replaceAll(r'\', '/')
+          .replaceAll('//', '/');
+    }
+  }
+
+  String _normalizePath(String path) {
+    String normalized = path.trim();
+
+    if (Platform.isWindows) {
+      normalized = normalized.replaceAll('/', r'\');
+      // Rimuovi backslash iniziali/finali
+      while (normalized.startsWith(r'\')) {
+        normalized = normalized.substring(1);
+      }
+      while (normalized.endsWith(r'\')) {
+        normalized = normalized.substring(0, normalized.length - 1);
+      }
+    } else {
+      normalized = normalized.replaceAll(r'\', '/');
+      // Rimuovi slash iniziali/finali
+      while (normalized.startsWith('/')) {
+        normalized = normalized.substring(1);
+      }
+      while (normalized.endsWith('/')) {
+        normalized = normalized.substring(0, normalized.length - 1);
+      }
     }
 
-    await OpenerPlatformInterface.instance.openPdf(
-      context: context,
-      filePath: fullPath,
-      page: page,
+    return normalized;
+  }
+
+  void _showError(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.red,
+        duration: const Duration(seconds: 3),
+      ),
     );
   }
 
-  String _buildCorrectPdfPath(String basePath, String percResto, String volume) {
-    String cleanBase = basePath.trim();
-    String cleanResto = percResto.trim();
-    String cleanVolume = volume.trim();
-
-    // Su Windows
-    if (Platform.isWindows) {
-      if (cleanBase.endsWith(r'\')) {
-        cleanBase = cleanBase.substring(0, cleanBase.length - 1);
-      }
-      if (cleanResto.startsWith(r'\')) {
-        cleanResto = cleanResto.substring(1);
-      }
-      return '$cleanBase\\$cleanResto\\$cleanVolume';
-    }
-    // Su altri OS
-    else {
-      if (cleanBase.endsWith('/')) {
-        cleanBase = cleanBase.substring(0, cleanBase.length - 1);
-      }
-      if (cleanResto.startsWith('/')) {
-        cleanResto = cleanResto.substring(1);
-      }
-      return '$cleanBase/$cleanResto/$cleanVolume';
-    }
+  void _clearFilters() {
+    setState(() {
+      _ricercaController.clear();
+      _strumentoController.clear();
+      _volumeController.clear();
+      _provenienzaController.clear();
+      _tipoMultiController.clear();
+      _queryResults.clear();
+      _error = null;
+    });
   }
 
-  String _normalizeAndJoin(String basePath, String percResto, String volume) {
-    String normalizedBase = basePath.replaceAll(r'\\', r'\').replaceAll('//', '/');
-    String normalizedResto = percResto.replaceAll(r'\\', r'\').replaceAll('//', '/');
-
-    if (Platform.isWindows && normalizedBase.endsWith(r'\')) {
-      normalizedBase = normalizedBase.substring(0, normalizedBase.length - 1);
-    } else if (!Platform.isWindows && normalizedBase.endsWith('/')) {
-      normalizedBase = normalizedBase.substring(0, normalizedBase.length - 1);
-    }
-
-    if (normalizedResto.startsWith('/') || normalizedResto.startsWith(r'\')) {
-      normalizedResto = normalizedResto.substring(1);
-    }
-
-    return p.join(normalizedBase, normalizedResto, volume);
-  }
+  // ================================================
+  // UI COMPONENTS
+  // ================================================
 
   @override
   Widget build(BuildContext context) {
     super.build(context);
 
-    if (_isLoading) {
-      return const Center(child: CircularProgressIndicator());
-    }
-    if (_error != null) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: SelectableText(
-            _error!,
-            style: const TextStyle(color: Colors.red),
-            textAlign: TextAlign.center,
-          ),
-        ),
-      );
-    }
-
-    return Padding(
-      padding: const EdgeInsets.all(16.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          // HEADER CON INFO
-          Card(
-            elevation: 2,
-            child: Padding(
-              padding: const EdgeInsets.all(12.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text("📊 Query SQL Avanzata",
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 8),
-                  Text("Percorso PDF: ${gPercorsoPdf.isNotEmpty ? gPercorsoPdf : "⚠️ NON CONFIGURATO"}  Piattaforma: ${Platform.operatingSystem}",
-                      style: TextStyle(fontSize: 12, fontFamily: 'monospace')),
-
-                ],
-              ),
-            ),
-          ),
-
-          const SizedBox(height: 16),
-
-          // EDITOR SQL
-          // EDITOR SQL COMPATTO (modifica nella funzione build, circa riga 265)
-          Card(
-            elevation: 2,
-            margin: const EdgeInsets.only(bottom: 8),
-            child: Padding(
-              padding: const EdgeInsets.all(10.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Row(
-                    children: [
-                      Icon(Icons.code, size: 16, color: Colors.blue),
-                      SizedBox(width: 6),
-                      Text(
-                        "Query SQL",
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.blue,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 6),
-                  Container(
-                    height: 100, // ALTEZZA RIDOTTA AL MASSIMO
-                    decoration: BoxDecoration(
-                      border: Border.all(color: Colors.grey[300]!),
-                      borderRadius: BorderRadius.circular(4),
-                      color: Colors.grey[50],
-                    ),
-                    child: TextField(
-                      controller: _sqlController,
-                      maxLines: null,
-                      expands: true,
-                      decoration: const InputDecoration(
-                        border: InputBorder.none,
-                        contentPadding: EdgeInsets.all(8),
-                        hintText: 'Inserisci query SQL...',
-                        hintStyle: TextStyle(fontSize: 12),
-                      ),
-                      style: const TextStyle(
-                        fontFamily: 'monospace',
-                        fontSize: 11,
-                        color: Colors.blueAccent,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-
-          const SizedBox(height: 16),
-
-          // CONTROLLI
-          _buildQueryControls(),
-
-          const Divider(height: 32),
-
-          // RISULTATI
-          Expanded(
-            child: _buildResultsSection(),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildQueryControls() {
-    return Card(
-      elevation: 2,
-      margin: const EdgeInsets.only(bottom: 8),
-      child: Padding(
-        padding: const EdgeInsets.all(10.0),
+    return Scaffold(
+      body: Padding(
+        padding: const EdgeInsets.all(16.0),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // RIGA SUPERIORE COMPATTA: PULSANTE + INFO
-            Row(
-              children: [
-                // PULSANTE ESECUZIONE COMPATTO
-                FilledButton.icon(
-                  onPressed: _isQueryRunning ? null : _executeQuery,
-                  icon: _isQueryRunning
-                      ? const SizedBox(
-                    width: 14,
-                    height: 14,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                      : const Icon(Icons.play_arrow, size: 16),
-                  label: Text(
-                    _isQueryRunning ? 'Esecuzione...' : 'Esegui',
-                    style: const TextStyle(fontSize: 13),
-                  ),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: Colors.blue[700],
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    minimumSize: const Size(0, 32),
-                  ),
-                ),
-
-                const SizedBox(width: 8),
-
-                // INFO COMPATTE IN LINEA
-                Expanded(
-                  child: Wrap(
-                    spacing: 8,
-                    runSpacing: 4,
-                    children: [
-                      if (_dbQueryTime != null)
-                        _buildCompactInfoChip(
-                          icon: Icons.timer,
-                          text: 'DB: ${_dbQueryTime!.inMilliseconds}ms',
-                          color: _dbQueryTime!.inMilliseconds > 500 ? Colors.red : Colors.green,
-                        ),
-
-                      if (_uiBuildTime != null)
-                        _buildCompactInfoChip(
-                          icon: Icons.dashboard,
-                          text: 'UI: ${_uiBuildTime!.inMilliseconds}ms',
-                          color: _uiBuildTime!.inMilliseconds > 200 ? Colors.orange : Colors.green,
-                        ),
-
-                      if (!_isQueryRunning && _queryResults.isNotEmpty)
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: Colors.green[50],
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: Colors.green[100]!),
-                          ),
-                          child: Text(
-                            '${_queryResults.length} risultati',
-                            style: const TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.green,
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-              ],
+            _buildSearchPanel(),
+            const SizedBox(height: 10),
+            _buildQueryControls(),
+            const Divider(),
+            Expanded(
+              child: _buildResultsSection(),
             ),
-
-            const SizedBox(height: 6),
-
-            // RIGA BOTTONI SECONDARI ULTRACOMPATTA
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: [
-                _buildMiniButton(
-                  icon: Icons.lightbulb_outline,
-                  label: 'Esempio',
-                  onPressed: () {
-                    _sqlController.text = """
-                    SELECT DISTINCT 
-                      Numpag,  
-                      a.titolo,  
-                      a.volume,  
-                      a.ArchivioProvenienza,  
-                      a.strumento,  
-                      primolink,
-                      '${gPercorsoPdf}' percradice,  
-                      percresto,
-                      '${gPercorsoPdf}' || percresto || '/' || a.Volume as PerApertura
-                    FROM spartiti a 
-                    WHERE a.id_univoco_globale IN (
-                      SELECT rowid FROM spartiti_fts 
-                      WHERE spartiti_fts MATCH 'girl ipanema'
-                    )
-                    AND (a.TipoMulti IS NULL OR a.TipoMulti LIKE 'PDF%' OR a.TipoMulti LIKE 'PD%')
-                    ORDER BY a.titolo, a.strumento
-                  """;
-                  },
-                  color: Colors.amber,
-                ),
-
-                _buildMiniButton(
-                  icon: Icons.check,
-                  label: 'Test DB',
-                  onPressed: () {
-                    _sqlController.text = "SELECT COUNT(*) as totale FROM spartiti";
-                  },
-                  color: Colors.green,
-                ),
-
-                _buildMiniButton(
-                  icon: Icons.analytics,
-                  label: 'Statistiche',
-                  onPressed: () {
-                    _sqlController.text = """
-                    SELECT 
-                      COUNT(*) as totale,
-                      COUNT(DISTINCT titolo) as titoli_unici,
-                      COUNT(DISTINCT autore) as autori_unici,
-                      COUNT(DISTINCT volume) as volumi_unici
-                    FROM spartiti
-                  """;
-                  },
-                  color: Colors.purple,
-                ),
-
-                _buildMiniButton(
-                  icon: Icons.clear,
-                  label: 'Pulisci',
-                  onPressed: _sqlController.clear,
-                  color: Colors.grey,
-                ),
-
-                _buildMiniButton(
-                  icon: Icons.refresh,
-                  label: 'Ricerca',
-                  onPressed: _loadTableInfo,
-                  color: Colors.blue,
-                ),
-              ],
-            ),
-
-            // MESSAGGIO ERRORE COMPATTO
-            if (_error != null && !_isQueryRunning)
-              Container(
-                margin: const EdgeInsets.only(top: 6),
-                padding: const EdgeInsets.all(6),
-                decoration: BoxDecoration(
-                  color: Colors.red[50],
-                  borderRadius: BorderRadius.circular(4),
-                  border: Border.all(color: Colors.red[100]!),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.error_outline, color: Colors.red, size: 14),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: Text(
-                        _error!.length > 80 ? '${_error!.substring(0, 80)}...' : _error!,
-                        style: const TextStyle(
-                          color: Colors.red,
-                          fontSize: 11,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
           ],
         ),
       ),
     );
   }
 
-// WIDGET PER INFO COMPATTE
-  Widget _buildCompactInfoChip({required IconData icon, required String text, required Color color}) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-      decoration: BoxDecoration(
-        color: Colors.grey[100],
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 12, color: Colors.grey[700]),
-          const SizedBox(width: 3),
-          Text(
-            text,
-            style: TextStyle(
-              fontSize: 10,
-              fontWeight: FontWeight.bold,
-              color: color,
-            ),
+  Widget _buildSearchPanel() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('Ricerca Testuale (FTS)', style: TextStyle(fontWeight: FontWeight.bold)),
+        TextField(
+          controller: _ricercaController,
+          decoration: const InputDecoration(
+            hintText: 'Es: girl ipanema (cerca ENTRAMBE le parole)',
+            border: OutlineInputBorder(),
+            isDense: true,
           ),
-        ],
+          onSubmitted: (_) => _executeQuery(),
+        ),
+        const SizedBox(height: 8),
+        const Text('Filtri (usare % per wildcard LIKE)', style: TextStyle(fontWeight: FontWeight.bold)),
+        Row(
+          children: [
+            Expanded(child: _buildFilterField(_strumentoController, 'Strumento')),
+            const SizedBox(width: 8),
+            Expanded(child: _buildFilterField(_volumeController, 'Volume')),
+            const SizedBox(width: 8),
+            Expanded(child: _buildFilterField(_provenienzaController, 'Provenienza')),
+            const SizedBox(width: 8),
+            Expanded(child: _buildFilterField(_tipoMultiController, 'TipoMulti')),
+          ],
+        )
+      ],
+    );
+  }
+
+  Widget _buildFilterField(TextEditingController controller, String label) {
+    return TextField(
+      controller: controller,
+      decoration: InputDecoration(
+        labelText: label,
+        border: const OutlineInputBorder(),
+        isDense: true,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
       ),
     );
   }
 
-// WIDGET PER PULSANTI MINI
-  Widget _buildMiniButton({
-    required IconData icon,
-    required String label,
-    required VoidCallback onPressed,
-    required Color color,
-  }) {
-    return OutlinedButton.icon(
-      onPressed: onPressed,
-      icon: Icon(icon, size: 14, color: color),
-      label: Text(
-        label,
-        style: TextStyle(fontSize: 11, color: color),
-      ),
-      style: OutlinedButton.styleFrom(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        minimumSize: const Size(0, 28),
-        side: BorderSide(color: color.withOpacity(0.3)),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(6),
+  Widget _buildQueryControls() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            // Pulsante ricerca principale
+            FilledButton.icon(
+              onPressed: _isQueryRunning ? null : _executeQuery,
+              icon: _isQueryRunning
+                  ? const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+                  : const Icon(Icons.search, size: 18),
+              label: Text(_isQueryRunning ? 'Ricerca...' : 'Cerca Spartiti'),
+              style: FilledButton.styleFrom(
+                backgroundColor: Colors.blue[700],
+                foregroundColor: Colors.white,
+              ),
+            ),
+
+            const SizedBox(width: 12),
+
+            // Pulsante pulisci
+            OutlinedButton.icon(
+              onPressed: _clearFilters,
+              icon: const Icon(Icons.clear_all, size: 18),
+              label: const Text('Pulisci Filtri'),
+            ),
+
+            const Spacer(),
+
+            // Contatore risultati
+            if (!_isQueryRunning && _queryResults.isNotEmpty)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.green[50],
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: Colors.green[100]!),
+                ),
+                child: Text(
+                  '${_queryResults.length} risultati',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: Colors.green,
+                  ),
+                ),
+              ),
+          ],
         ),
-      ),
+
+        const SizedBox(height: 8),
+
+        // Timing info
+        if (_dbQueryTime != null || _uiBuildTime != null)
+          Wrap(
+            spacing: 12,
+            children: [
+              if (_dbQueryTime != null)
+                _buildTimingChip(
+                  icon: Icons.timer,
+                  label: 'DB: ${_dbQueryTime!.inMilliseconds}ms',
+                  color: _dbQueryTime!.inMilliseconds > 500 ? Colors.orange : Colors.green,
+                ),
+              if (_uiBuildTime != null)
+                _buildTimingChip(
+                  icon: Icons.dashboard,
+                  label: 'UI: ${_uiBuildTime!.inMilliseconds}ms',
+                  color: _uiBuildTime!.inMilliseconds > 100 ? Colors.orange : Colors.green,
+                ),
+            ],
+          ),
+
+        // Messaggio errore
+        if (_error != null && !_isQueryRunning) ...[
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: Colors.red[50],
+              borderRadius: BorderRadius.circular(4),
+              border: Border.all(color: Colors.red[100]!),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.error_outline, color: Colors.red, size: 16),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    _error!,
+                    style: const TextStyle(color: Colors.red, fontSize: 12),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildTimingChip({required IconData icon, required String label, required Color color}) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 14, color: color),
+        const SizedBox(width: 4),
+        Text(
+          label,
+          style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: color),
+        ),
+      ],
     );
   }
 
@@ -709,8 +546,7 @@ class _FunzioniVariazioneDatiScreenState extends State<FunzioniVariazioneDatiScr
           children: [
             CircularProgressIndicator(),
             SizedBox(height: 16),
-            Text('Esecuzione query in corso...',
-                style: TextStyle(color: Colors.grey)),
+            Text('Ricerca in corso...', style: TextStyle(color: Colors.grey)),
           ],
         ),
       );
@@ -732,9 +568,9 @@ class _FunzioniVariazioneDatiScreenState extends State<FunzioniVariazioneDatiScr
               ),
               const SizedBox(height: 16),
               ElevatedButton.icon(
-                onPressed: _loadTableInfo,
+                onPressed: _executeQuery,
                 icon: const Icon(Icons.refresh),
-                label: const Text('Riprova'),
+                label: const Text('Riprova Ricerca'),
               ),
             ],
           ),
@@ -743,23 +579,43 @@ class _FunzioniVariazioneDatiScreenState extends State<FunzioniVariazioneDatiScr
     }
 
     if (_queryResults.isEmpty) {
-      return const Center(
+      return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.search, size: 64, color: Colors.grey),
-            SizedBox(height: 16),
-            Text('Nessun risultato',
-                style: TextStyle(color: Colors.grey, fontSize: 18)),
-            SizedBox(height: 8),
-            Text('Esegui una query per vedere i risultati',
-                style: TextStyle(color: Colors.grey)),
+            const Icon(Icons.search, size: 64, color: Colors.grey),
+            const SizedBox(height: 16),
+            Text(
+              _ricercaController.text.isEmpty
+                  ? 'Inserisci un termine di ricerca'
+                  : 'Nessun risultato trovato',
+              style: const TextStyle(color: Colors.grey, fontSize: 16),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Prova con criteri diversi o usa wildcard (%)',
+              style: TextStyle(color: Colors.grey),
+            ),
           ],
         ),
       );
     }
 
-    final columnKeys = _queryResults.first.keys.toList();
+    // Colonne da mostrare (priorità)
+    final preferredColumns = ['titolo', 'strumento', 'volume', 'ArchivioProvenienza', 'NumPag'];
+    final availableColumns = _queryResults.first.keys
+        .where((key) => preferredColumns.contains(key.toLowerCase()))
+        .toList();
+
+    // Se mancano colonne preferite, aggiungi altre disponibili
+    if (availableColumns.length < 3) {
+      availableColumns.addAll(
+          _queryResults.first.keys
+              .where((key) => !availableColumns.contains(key))
+              .take(3 - availableColumns.length)
+      );
+    }
+
     return Card(
       elevation: 2,
       child: Padding(
@@ -767,57 +623,43 @@ class _FunzioniVariazioneDatiScreenState extends State<FunzioniVariazioneDatiScr
         child: DataTable2(
           columnSpacing: 12,
           horizontalMargin: 12,
-          minWidth: 2000,
+          minWidth: 1000,
           showCheckboxColumn: false,
           sortAscending: true,
-          columns: columnKeys.map((key) {
-            ColumnSize size;
-            switch (key.toLowerCase()) {
-              case 'perapertura': size = ColumnSize.L; break;
-              case 'percradice': case 'percresto': size = ColumnSize.M; break;
-              case 'numpag': size = ColumnSize.S; break;
-              case 'titolo': size = ColumnSize.L; break;
-              case 'volume': case 'archivioprovenienza': size = ColumnSize.M; break;
-              default: size = ColumnSize.M;
-            }
+          columns: availableColumns.map((key) {
             return DataColumn2(
               label: Text(
-                key,
+                _formatColumnName(key),
                 style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
                 overflow: TextOverflow.ellipsis,
               ),
-              size: size,
+              size: _getColumnSize(key),
             );
           }).toList(),
+
           rows: _queryResults.map((row) {
             return DataRow2(
               onTap: () => _openPdfFromRow(row),
-              color: WidgetStateProperty.resolveWith<Color?>(
-                    (Set<WidgetState> states) {
-                  if (states.contains(WidgetState.hovered)) {
-                    return Colors.blue[50];
-                  }
-                  return null;
-                },
-              ),
-              cells: row.entries.map((entry) {
-                final cellValue = entry.value?.toString() ?? 'NULL';
-                final isPath = entry.key.toLowerCase().contains('perc') ||
-                    entry.key.toLowerCase().contains('perapertura');
-                final isTitle = entry.key.toLowerCase() == 'titolo';
-                final isPage = entry.key.toLowerCase() == 'numpag';
+              color: WidgetStateProperty.resolveWith<Color?>((states) {
+                if (states.contains(WidgetState.hovered)) {
+                  return Colors.blue[50];
+                }
+                return null;
+              }),
+              cells: availableColumns.map((column) {
+                final value = row[column]?.toString() ?? '';
+                final isPage = column.toLowerCase() == 'numpag';
+                final isTitle = column.toLowerCase() == 'titolo';
 
                 return DataCell(
                   Tooltip(
-                    message: isPath ? 'Clicca per aprire PDF\n$cellValue' : cellValue,
+                    message: value,
                     child: SelectableText(
-                      cellValue.length > 50 ? '${cellValue.substring(0, 50)}...' : cellValue,
+                      value.length > 30 ? '${value.substring(0, 30)}...' : value,
                       style: TextStyle(
-                        fontSize: 11,
-                        color: isPath ? Colors.blue : (isPage ? Colors.green[700] : null),
-                        fontFamily: isPath ? 'monospace' : null,
-                        fontWeight: isTitle ? FontWeight.bold : null,
-                        fontStyle: cellValue == 'NULL' ? FontStyle.italic : null,
+                        fontSize: 12,
+                        fontWeight: isTitle ? FontWeight.w500 : FontWeight.normal,
+                        color: isPage ? Colors.green[700] : null,
                       ),
                     ),
                   ),
@@ -828,5 +670,30 @@ class _FunzioniVariazioneDatiScreenState extends State<FunzioniVariazioneDatiScr
         ),
       ),
     );
+  }
+
+  String _formatColumnName(String column) {
+    final names = {
+      'titolo': 'Titolo',
+      'strumento': 'Strumento',
+      'volume': 'Volume',
+      'archivioprovenienza': 'Provenienza',
+      'numpag': 'Pagina',
+      'autore': 'Autore',
+      'percresto': 'Percorso',
+      'perapertura': 'File PDF',
+      'tipoMulti': 'Tipo',
+    };
+    return names[column.toLowerCase()] ?? column;
+  }
+
+  ColumnSize _getColumnSize(String column) {
+    switch (column.toLowerCase()) {
+      case 'titolo': return ColumnSize.L;
+      case 'perapertura': return ColumnSize.L;
+      case 'volume': case 'archivioprovenienza': return ColumnSize.M;
+      case 'strumento': case 'numpag': case 'tipoMulti': return ColumnSize.S;
+      default: return ColumnSize.M;
+    }
   }
 }

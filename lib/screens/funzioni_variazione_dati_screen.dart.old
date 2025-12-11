@@ -1,4 +1,4 @@
-/// funzioni_variazione_dati_screen.dart - VERSIONE CORRETTA CON QUERY FIX
+/// funzioni_variazione_dati_screen.dart - VERSIONE CORRETTA CON FIX FTS
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -8,7 +8,7 @@ import 'package:path/path.dart' as p;
 
 import 'package:jamsetgemini/main.dart';
 import 'package:jamsetgemini/platform/opener_platform_interface.dart';
-import 'package:jamsetgemini/utils/file_opener.dart';  // Aggiungi import
+import 'package:jamsetgemini/utils/file_opener.dart';
 
 class FunzioniVariazioneDatiScreen extends StatefulWidget {
   const FunzioniVariazioneDatiScreen({super.key});
@@ -38,13 +38,11 @@ class _FunzioniVariazioneDatiScreenState extends State<FunzioniVariazioneDatiScr
   void initState() {
     super.initState();
 
-    // QUERY ORIGINALE ESATTA
+    // QUERY CORRETTA - FIX FTS
     final String defaultQuery = """
-             SELECT DISTINCT   Numpag,  a.titolo,  a.volume,  a.ArchivioProvenienza,  a.strumento,  
-             primolink,'${gPercorsoPdf}' percradice,  percresto,
-            '${gPercorsoPdf}'||percresto||a.Volume as PerApertura
-             FROM spartiti a JOIN spartiti_fts fts ON a.idBra = fts.rowid WHERE a.tipoMulti LIKE 'PD%'
-             AND spartiti_fts MATCH 'girl ipanema'ORDER BY a.titolo, a.strumento """  ;
+      SELECT DISTINCT Numpag,a.titolo, a.volume,  a.ArchivioProvenienza,a.strumento, primolink, '${gPercorsoPdf}' percradice, percresto, '${gPercorsoPdf}' || percresto || '/' || a.Volume as PerApertura
+      FROM spartiti a   WHERE a.id_univoco_globale IN ( SELECT rowid FROM spartiti_fts  WHERE spartiti_fts MATCH
+      'girl ipanema' )  AND (a.tipoMulti LIKE 'PDF%' OR a.tipoMulti LIKE 'PD%' OR a.tipoMulti IS NULL) ORDER BY a.titolo, a.strumento    """;
 
     _sqlController = TextEditingController(text: defaultQuery);
     _loadTableInfo();
@@ -59,14 +57,28 @@ class _FunzioniVariazioneDatiScreenState extends State<FunzioniVariazioneDatiScr
   Future<void> _loadTableInfo() async {
     if (dbCatalogoAttivo == null) {
       setState(() {
-        _error = "Database non disponibile. Controllare l\'errore all\'avvio.";
+        _error = "Database non disponibile. Controllare l'errore all'avvio.";
         _isLoading = false;
       });
       return;
     }
     try {
+      // Verifica se FTS esiste
+      final ftsExists = await dbCatalogoAttivo!.rawQuery(
+          "SELECT name FROM sqlite_master WHERE type='table' AND name='spartiti_fts'"
+      );
+
+      if (ftsExists.isEmpty) {
+        setState(() {
+          _error = "⚠️ Tabella FTS non trovata.\nL'indice di ricerca full-text non è configurato.\nVerifica l'inizializzazione del database.";
+          _isLoading = false;
+        });
+        return;
+      }
+
       final tableInfo = await dbCatalogoAttivo!.rawQuery('PRAGMA table_info(spartiti);');
       final fields = tableInfo.map((row) => row['name'] as String).toList();
+
       if (mounted) {
         setState(() {
           _tableFields = fields;
@@ -94,9 +106,65 @@ class _FunzioniVariazioneDatiScreenState extends State<FunzioniVariazioneDatiScr
     });
 
     try {
+      final String query = _sqlController.text.trim();
+
+      // STAMPA DELLA QUERY CON COLORI E FORMATTAZIONE
+      debugPrint("\n" + "="*80);
+      debugPrint("🚀 QUERY SQL ESEGUITA:");
+      debugPrint("="*80);
+      debugPrint(query);
+      debugPrint("="*80);
+
+      // Mostra anche all'utente (in formato più leggibile)
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            "Query eseguita: ${query.length > 50 ? '${query.substring(0, 50)}...' : query}",
+            style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+          ),
+          duration: const Duration(seconds: 3),
+          backgroundColor: Colors.blue[800],
+        ),
+      );
+
+      // Verifica se FTS esiste
+      final ftsCheck = await dbCatalogoAttivo!.rawQuery(
+          "SELECT name FROM sqlite_master WHERE type='table' AND name='spartiti_fts'"
+      );
+
+      if (ftsCheck.isEmpty) {
+        setState(() {
+          _error = "❌ ERRORE: Tabella spartiti_fts non trovata.\nLa ricerca FTS non è disponibile.\nRiavvia l'app o ricrea gli indici FTS.";
+          _isQueryRunning = false;
+        });
+        return;
+      }
+
       final dbStopwatch = Stopwatch()..start();
-      final results = await dbCatalogoAttivo!.rawQuery(_sqlController.text);
+      final results = await dbCatalogoAttivo!.rawQuery(query);
       dbStopwatch.stop();
+
+      // STAMPA DEI RISULTATI
+      debugPrint("\n📊 RISULTATI DELLA QUERY:");
+      debugPrint("   Record trovati: ${results.length}");
+
+      if (results.isNotEmpty) {
+        debugPrint("\n   STRUTTURA COLONNE:");
+        final firstRow = results.first;
+        for (var key in firstRow.keys) {
+          debugPrint("   - $key: ${firstRow[key]}");
+        }
+
+        debugPrint("\n   PRIMI 3 RISULTATI:");
+        for (var i = 0; i < (results.length > 3 ? 3 : results.length); i++) {
+          debugPrint("\n   [Risultato ${i + 1}]");
+          final row = results[i];
+          for (var key in row.keys) {
+            final value = row[key]?.toString() ?? 'NULL';
+            debugPrint("     $key: ${value.length > 50 ? '${value.substring(0, 50)}...' : value}");
+          }
+        }
+      }
 
       if (mounted) {
         final uiStopwatch = Stopwatch()..start();
@@ -118,7 +186,7 @@ class _FunzioniVariazioneDatiScreenState extends State<FunzioniVariazioneDatiScr
     } catch (e) {
       if (mounted) {
         setState(() {
-          _error = "Errore esecuzione query: \n${e.toString()}";
+          _error = "Errore esecuzione query: \n${e.toString()}\n\nSuggerimento: Verifica la sintassi SQL e che le tabelle esistano.";
           _queryResults = [];
           _isQueryRunning = false;
         });
@@ -130,7 +198,7 @@ class _FunzioniVariazioneDatiScreenState extends State<FunzioniVariazioneDatiScr
     // Normalizza le chiavi a lowercase
     final lowerCaseRowData = {for (var k in rowData.keys) k.toLowerCase(): rowData[k]};
 
-    // VERIFICA I CAMPI NECESSARI (NON PIÙ PerApertura!)
+    // VERIFICA I CAMPI NECESSARI
     if (!lowerCaseRowData.containsKey('percresto') ||
         !lowerCaseRowData.containsKey('volume')) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
@@ -154,7 +222,7 @@ class _FunzioniVariazioneDatiScreenState extends State<FunzioniVariazioneDatiScr
 
     final page = int.tryParse(pageNum?.toString() ?? '1') ?? 1;
 
-    // --- LOGICA UNIFICATA: USA SEMPRE gPercorsoPdf COME BASE ---
+    // Controlla se percorso PDF è configurato
     if (gPercorsoPdf.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
         content: Text('ERRORE: Percorso PDF non configurato. Vai nelle Impostazioni.'),
@@ -166,36 +234,67 @@ class _FunzioniVariazioneDatiScreenState extends State<FunzioniVariazioneDatiScr
     // Costruisci il percorso corretto
     final fullPath = _buildCorrectPdfPath(gPercorsoPdf, percResto, volume);
 
-    // --- DEBUG DETTAGLIATO ---
-    print('=== APERTURA PDF DA RICERCA FTS ===');
-    print('Piattaforma: ${Platform.operatingSystem}');
-    print('gPercorsoPdf: $gPercorsoPdf');
-    print('PercResto: $percResto');
-    print('Volume: $volume');
-    print('Path finale: $fullPath');
-    print('Pagina: $page');
+    debugPrint('=== APERTURA PDF ===');
+    debugPrint('Piattaforma: ${Platform.operatingSystem}');
+    debugPrint('Base: $gPercorsoPdf');
+    debugPrint('Resto: $percResto');
+    debugPrint('Volume: $volume');
+    debugPrint('Path: $fullPath');
+    debugPrint('Pagina: $page');
 
     // Verifica se il file esiste
     try {
       final file = File(fullPath);
       final exists = await file.exists();
-      print('📄 File esiste? $exists');
+      debugPrint('File esiste? $exists');
 
       if (!exists) {
-        print('🔍 DEBUG percorsi alternativi:');
+        // Prova percorsi alternativi
+        debugPrint('Prova percorsi alternativi...');
 
-        // 1. Prova con path.join (come fa csv_viewer)
+        // 1. Prova con path.join
         final pathJoinResult = p.join(gPercorsoPdf, percResto, volume);
-        print('   Path.join: $pathJoinResult');
-        print('   Path.join esiste? ${await File(pathJoinResult).exists()}');
+        debugPrint('Path.join: $pathJoinResult');
 
-        // 2. Prova con percorsi normalizzati
+        // 2. Prova normalizzato
         final normalized = _normalizeAndJoin(gPercorsoPdf, percResto, volume);
-        print('   Normalizzato: $normalized');
-        print('   Normalizzato esiste? ${await File(normalized).exists()}');
+        debugPrint('Normalizzato: $normalized');
+
+        // Se esiste uno dei percorsi alternativi, usalo
+        final altFile1 = File(pathJoinResult);
+        final altFile2 = File(normalized);
+
+        if (await altFile1.exists()) {
+          debugPrint('✅ Trovato con path.join');
+          await OpenerPlatformInterface.instance.openPdf(
+            context: context,
+            filePath: pathJoinResult,
+            page: page,
+          );
+          return;
+        } else if (await altFile2.exists()) {
+          debugPrint('✅ Trovato con percorso normalizzato');
+          await OpenerPlatformInterface.instance.openPdf(
+            context: context,
+            filePath: normalized,
+            page: page,
+          );
+          return;
+        }
+
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('File non trovato: $volume'),
+          backgroundColor: Colors.orange,
+        ));
+        return;
       }
     } catch (e) {
-      print('❌ Errore verifica file: $e');
+      debugPrint('❌ Errore verifica file: $e');
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Errore accesso file: $e'),
+        backgroundColor: Colors.red,
+      ));
+      return;
     }
 
     await OpenerPlatformInterface.instance.openPdf(
@@ -205,64 +304,47 @@ class _FunzioniVariazioneDatiScreenState extends State<FunzioniVariazioneDatiScr
     );
   }
 
-// FUNZIONE DI SUPPORTO PER COSTRUIRE PERCORSI CORRETTI
   String _buildCorrectPdfPath(String basePath, String percResto, String volume) {
-    // Normalizza i percorsi
     String cleanBase = basePath.trim();
     String cleanResto = percResto.trim();
     String cleanVolume = volume.trim();
 
     // Su Windows
     if (Platform.isWindows) {
-      // Rimuovi slash finale da base
       if (cleanBase.endsWith(r'\')) {
         cleanBase = cleanBase.substring(0, cleanBase.length - 1);
       }
-
-      // Rimuovi slash iniziale da resto se presente
       if (cleanResto.startsWith(r'\')) {
         cleanResto = cleanResto.substring(1);
       }
-
-      // Costruisci il percorso Windows-style
       return '$cleanBase\\$cleanResto\\$cleanVolume';
     }
     // Su altri OS
     else {
-      // Rimuovi slash finale da base
       if (cleanBase.endsWith('/')) {
         cleanBase = cleanBase.substring(0, cleanBase.length - 1);
       }
-
-      // Rimuovi slash iniziale da resto se presente
       if (cleanResto.startsWith('/')) {
         cleanResto = cleanResto.substring(1);
       }
-
-      // Costruisci il percorso Unix-style
       return '$cleanBase/$cleanResto/$cleanVolume';
     }
   }
 
-// Alternativa con path.join ma normalizzata
   String _normalizeAndJoin(String basePath, String percResto, String volume) {
-    // Normalizza separatori
     String normalizedBase = basePath.replaceAll(r'\\', r'\').replaceAll('//', '/');
     String normalizedResto = percResto.replaceAll(r'\\', r'\').replaceAll('//', '/');
 
-    // Rimuovi slash finale da base
     if (Platform.isWindows && normalizedBase.endsWith(r'\')) {
       normalizedBase = normalizedBase.substring(0, normalizedBase.length - 1);
     } else if (!Platform.isWindows && normalizedBase.endsWith('/')) {
       normalizedBase = normalizedBase.substring(0, normalizedBase.length - 1);
     }
 
-    // Rimuovi slash iniziale da resto
     if (normalizedResto.startsWith('/') || normalizedResto.startsWith(r'\')) {
       normalizedResto = normalizedResto.substring(1);
     }
 
-    // Usa path.join
     return p.join(normalizedBase, normalizedResto, volume);
   }
 
@@ -273,8 +355,17 @@ class _FunzioniVariazioneDatiScreenState extends State<FunzioniVariazioneDatiScr
     if (_isLoading) {
       return const Center(child: CircularProgressIndicator());
     }
-    if (_error != null && dbCatalogoAttivo == null) {
-      return Center(child: SelectableText(_error!, style: const TextStyle(color: Colors.red)));
+    if (_error != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: SelectableText(
+            _error!,
+            style: const TextStyle(color: Colors.red),
+            textAlign: TextAlign.center,
+          ),
+        ),
+      );
     }
 
     return Padding(
@@ -282,25 +373,89 @@ class _FunzioniVariazioneDatiScreenState extends State<FunzioniVariazioneDatiScr
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Text("Tabella attiva: spartiti",
-              style: TextStyle(fontWeight: FontWeight.bold, fontStyle: FontStyle.italic)),
-          const SizedBox(height: 10),
-          const Text("NOTA: I percorsi vengono corretti automaticamente per la piattaforma",
-              style: TextStyle(fontSize: 12, color: Colors.blue)),
-          const SizedBox(height: 5),
-          TextField(
-            controller: _sqlController,
-            maxLines: 5,
-            decoration: const InputDecoration(
-                labelText: 'Comando SQL',
-                border: OutlineInputBorder(),
-                hintText: 'La query deve includere: PerApertura, NumPag, PercRadice, PercResto, Volume'
+          // HEADER CON INFO
+          Card(
+            elevation: 2,
+            child: Padding(
+              padding: const EdgeInsets.all(12.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text("📊 Query SQL Avanzata",
+                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 8),
+                  Text("Percorso PDF: ${gPercorsoPdf.isNotEmpty ? gPercorsoPdf : "⚠️ NON CONFIGURATO"}  Piattaforma: ${Platform.operatingSystem}",
+                      style: TextStyle(fontSize: 12, fontFamily: 'monospace')),
+
+                ],
+              ),
             ),
-            style: const TextStyle(fontFamily: 'monospace', fontSize: 11, color: Colors.blueAccent),
           ),
-          const SizedBox(height: 5),
+
+          const SizedBox(height: 16),
+
+          // EDITOR SQL
+          // EDITOR SQL COMPATTO (modifica nella funzione build, circa riga 265)
+          Card(
+            elevation: 2,
+            margin: const EdgeInsets.only(bottom: 8),
+            child: Padding(
+              padding: const EdgeInsets.all(10.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Row(
+                    children: [
+                      Icon(Icons.code, size: 16, color: Colors.blue),
+                      SizedBox(width: 6),
+                      Text(
+                        "Query SQL",
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.blue,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Container(
+                    height: 100, // ALTEZZA RIDOTTA AL MASSIMO
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.grey[300]!),
+                      borderRadius: BorderRadius.circular(4),
+                      color: Colors.grey[50],
+                    ),
+                    child: TextField(
+                      controller: _sqlController,
+                      maxLines: null,
+                      expands: true,
+                      decoration: const InputDecoration(
+                        border: InputBorder.none,
+                        contentPadding: EdgeInsets.all(8),
+                        hintText: 'Inserisci query SQL...',
+                        hintStyle: TextStyle(fontSize: 12),
+                      ),
+                      style: const TextStyle(
+                        fontFamily: 'monospace',
+                        fontSize: 11,
+                        color: Colors.blueAccent,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          const SizedBox(height: 16),
+
+          // CONTROLLI
           _buildQueryControls(),
-          const Divider(),
+
+          const Divider(height: 32),
+
+          // RISULTATI
           Expanded(
             child: _buildResultsSection(),
           ),
@@ -310,133 +465,368 @@ class _FunzioniVariazioneDatiScreenState extends State<FunzioniVariazioneDatiScr
   }
 
   Widget _buildQueryControls() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
+    return Card(
+      elevation: 2,
+      margin: const EdgeInsets.only(bottom: 8),
+      child: Padding(
+        padding: const EdgeInsets.all(10.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            ElevatedButton.icon(
-              onPressed: _isQueryRunning ? null : _executeQuery,
-              icon: const Icon(Icons.play_arrow),
-              label: const Text('Esegui Query'),
+            // RIGA SUPERIORE COMPATTA: PULSANTE + INFO
+            Row(
+              children: [
+                // PULSANTE ESECUZIONE COMPATTO
+                FilledButton.icon(
+                  onPressed: _isQueryRunning ? null : _executeQuery,
+                  icon: _isQueryRunning
+                      ? const SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                      : const Icon(Icons.play_arrow, size: 16),
+                  label: Text(
+                    _isQueryRunning ? 'Esecuzione...' : 'Esegui',
+                    style: const TextStyle(fontSize: 13),
+                  ),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: Colors.blue[700],
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    minimumSize: const Size(0, 32),
+                  ),
+                ),
+
+                const SizedBox(width: 8),
+
+                // INFO COMPATTE IN LINEA
+                Expanded(
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 4,
+                    children: [
+                      if (_dbQueryTime != null)
+                        _buildCompactInfoChip(
+                          icon: Icons.timer,
+                          text: 'DB: ${_dbQueryTime!.inMilliseconds}ms',
+                          color: _dbQueryTime!.inMilliseconds > 500 ? Colors.red : Colors.green,
+                        ),
+
+                      if (_uiBuildTime != null)
+                        _buildCompactInfoChip(
+                          icon: Icons.dashboard,
+                          text: 'UI: ${_uiBuildTime!.inMilliseconds}ms',
+                          color: _uiBuildTime!.inMilliseconds > 200 ? Colors.orange : Colors.green,
+                        ),
+
+                      if (!_isQueryRunning && _queryResults.isNotEmpty)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: Colors.green[50],
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.green[100]!),
+                          ),
+                          child: Text(
+                            '${_queryResults.length} risultati',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.green,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(width: 16),
-            if (!_isQueryRunning && _queryResults.isNotEmpty)
-              Text('Trovati: ${_queryResults.length}',
-                  style: const TextStyle(fontWeight: FontWeight.bold)),
+
+            const SizedBox(height: 6),
+
+            // RIGA BOTTONI SECONDARI ULTRACOMPATTA
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                _buildMiniButton(
+                  icon: Icons.lightbulb_outline,
+                  label: 'Esempio',
+                  onPressed: () {
+                    _sqlController.text = """
+                    SELECT DISTINCT
+                      Numpag,
+                      a.titolo,
+                      a.volume,
+                      a.ArchivioProvenienza,
+                      a.strumento,
+                      primolink,
+                      '${gPercorsoPdf}' percradice,
+                      percresto,
+                      '${gPercorsoPdf}' || percresto || '/' || a.Volume as PerApertura
+                    FROM spartiti a
+                    WHERE a.id_univoco_globale IN (
+                      SELECT rowid FROM spartiti_fts
+                      WHERE spartiti_fts MATCH 'girl ipanema'
+                    )
+                    AND (a.TipoMulti IS NULL OR a.TipoMulti LIKE 'PDF%' OR a.TipoMulti LIKE 'PD%')
+                    ORDER BY a.titolo, a.strumento
+                  """;
+                  },
+                  color: Colors.amber,
+                ),
+
+                _buildMiniButton(
+                  icon: Icons.check,
+                  label: 'Test DB',
+                  onPressed: () {
+                    _sqlController.text = "SELECT COUNT(*) as totale FROM spartiti";
+                  },
+                  color: Colors.green,
+                ),
+
+                _buildMiniButton(
+                  icon: Icons.analytics,
+                  label: 'Statistiche',
+                  onPressed: () {
+                    _sqlController.text = """
+                    SELECT
+                      COUNT(*) as totale,
+                      COUNT(DISTINCT titolo) as titoli_unici,
+                      COUNT(DISTINCT autore) as autori_unici,
+                      COUNT(DISTINCT volume) as volumi_unici
+                    FROM spartiti
+                  """;
+                  },
+                  color: Colors.purple,
+                ),
+
+                _buildMiniButton(
+                  icon: Icons.clear,
+                  label: 'Pulisci',
+                  onPressed: _sqlController.clear,
+                  color: Colors.grey,
+                ),
+
+                _buildMiniButton(
+                  icon: Icons.refresh,
+                  label: 'Ricerca',
+                  onPressed: _loadTableInfo,
+                  color: Colors.blue,
+                ),
+              ],
+            ),
+
+            // MESSAGGIO ERRORE COMPATTO
+            if (_error != null && !_isQueryRunning)
+              Container(
+                margin: const EdgeInsets.only(top: 6),
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: Colors.red[50],
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(color: Colors.red[100]!),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.error_outline, color: Colors.red, size: 14),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        _error!.length > 80 ? '${_error!.substring(0, 80)}...' : _error!,
+                        style: const TextStyle(
+                          color: Colors.red,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
           ],
         ),
-        const SizedBox(height: 8),
-        if (_dbQueryTime != null)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4.0),
-            child: Text(
-              'Tempo Query DB: ${_dbQueryTime!.inMilliseconds} ms',
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                color: _dbQueryTime!.inMilliseconds > 500 ? Colors.red : Colors.green,
-              ),
-            ),
-          ),
-        if (_uiBuildTime != null)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4.0),
-            child: Text(
-              'Tempo Costruzione UI: ${_uiBuildTime!.inMilliseconds} ms',
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                color: _uiBuildTime!.inMilliseconds > 200 ? Colors.orange.shade800 : Colors.green,
-              ),
-            ),
-          ),
-        const SizedBox(height: 8),
-        ElevatedButton.icon(
-          onPressed: () {
-            // Query di esempio che funziona correttamente
-            _sqlController.text = """
+      ),
+    );
+  }
 
-            SELECT DISTINCT   Numpag,  a.titolo,  a.volume,  a.ArchivioProvenienza,  a.strumento,
-            primolink,'${gPercorsoPdf}' percradice,  percresto,
-            '${gPercorsoPdf}'||percresto||a.Volume as PerApertura
-            FROM spartiti a JOIN spartiti_fts fts ON a.idBra = fts.rowid WHERE a.tipoMulti LIKE 'PD%'
-            AND spartiti_fts MATCH 'girl ipanema'ORDER BY a.titolo, a.strumento """  ;
-          },
-          icon: const Icon(Icons.lightbulb_outline),
-          label: const Text('Query di Esempio'),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.blue[50],
-            foregroundColor: Colors.blue,
+// WIDGET PER INFO COMPATTE
+  Widget _buildCompactInfoChip({required IconData icon, required String text, required Color color}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+      decoration: BoxDecoration(
+        color: Colors.grey[100],
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 12, color: Colors.grey[700]),
+          const SizedBox(width: 3),
+          Text(
+            text,
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.bold,
+              color: color,
+            ),
           ),
+        ],
+      ),
+    );
+  }
+
+// WIDGET PER PULSANTI MINI
+  Widget _buildMiniButton({
+    required IconData icon,
+    required String label,
+    required VoidCallback onPressed,
+    required Color color,
+  }) {
+    return OutlinedButton.icon(
+      onPressed: onPressed,
+      icon: Icon(icon, size: 14, color: color),
+      label: Text(
+        label,
+        style: TextStyle(fontSize: 11, color: color),
+      ),
+      style: OutlinedButton.styleFrom(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        minimumSize: const Size(0, 28),
+        side: BorderSide(color: color.withOpacity(0.3)),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(6),
         ),
-        const SizedBox(height: 8),
-        Text(
-          'Configurazione attuale:',
-          style: TextStyle(fontSize: 12, color: Colors.grey[700]),
-        ),
-        Text(
-          'Percorso PDF: ${gPercorsoPdf.isNotEmpty ? gPercorsoPdf : "NON CONFIGURATO"}',
-          style: TextStyle(fontSize: 11, fontFamily: 'monospace', color: Colors.blue),
-        ),
-        Text(
-          'Piattaforma: ${Platform.operatingSystem}',
-          style: TextStyle(fontSize: 11, color: Colors.grey[600]),
-        ),
-      ],
+      ),
     );
   }
 
   Widget _buildResultsSection() {
-    if (_isQueryRunning) return const Center(child: CircularProgressIndicator());
-    if (_error != null) return Center(child: SelectableText(_error!, style: const TextStyle(color: Colors.blue)));
-    if (_queryResults.isEmpty) return const Center(child: Text('Nessun risultato o query non ancora eseguita.'));
+    if (_isQueryRunning) {
+      return const Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(height: 16),
+            Text('Esecuzione query in corso...',
+                style: TextStyle(color: Colors.grey)),
+          ],
+        ),
+      );
+    }
+
+    if (_error != null && _queryResults.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.error_outline, size: 64, color: Colors.red),
+              const SizedBox(height: 16),
+              SelectableText(
+                _error!,
+                style: const TextStyle(color: Colors.red),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 16),
+              ElevatedButton.icon(
+                onPressed: _loadTableInfo,
+                icon: const Icon(Icons.refresh),
+                label: const Text('Riprova'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (_queryResults.isEmpty) {
+      return const Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.search, size: 64, color: Colors.grey),
+            SizedBox(height: 16),
+            Text('Nessun risultato',
+                style: TextStyle(color: Colors.grey, fontSize: 18)),
+            SizedBox(height: 8),
+            Text('Esegui una query per vedere i risultati',
+                style: TextStyle(color: Colors.grey)),
+          ],
+        ),
+      );
+    }
 
     final columnKeys = _queryResults.first.keys.toList();
-    return DataTable2(
-      columnSpacing: 10,
-      horizontalMargin: 10,
-      minWidth: 2000,
-      columns: columnKeys.map((key) {
-        ColumnSize size;
-        switch (key.toLowerCase()) {
-          case 'perapertura': size = ColumnSize.L; break;
-          case 'percradice': size = ColumnSize.M; break;
-          case 'percresto': size = ColumnSize.M; break;
-          case 'numpag': size = ColumnSize.S; break;
-          case 'titolo': size = ColumnSize.L; break;
-          case 'volume': size = ColumnSize.M; break;
-          case 'archivioprovenienza': size = ColumnSize.M; break;
-          default: size = ColumnSize.M;
-        }
-        return DataColumn2(
-            label: Text(key, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
-            size: size
-        );
-      }).toList(),
-      rows: _queryResults.map((row) {
-        return DataRow2(
-          onTap: () => _openPdfFromRow(row),
-          cells: row.entries.map((entry) {
-            final cellValue = entry.value?.toString() ?? 'NULL';
-            final isPath = entry.key.toLowerCase().contains('perc') ||
-                entry.key.toLowerCase().contains('perapertura');
-
-            return DataCell(
-              Tooltip(
-                message: isPath ? 'Clicca per aprire PDF\nPath: $cellValue' : cellValue,
-                child: SelectableText(
-                  cellValue.length > 50 ? '${cellValue.substring(0, 50)}...' : cellValue,
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: isPath ? Colors.blue : null,
-                    fontFamily: isPath ? 'monospace' : null,
-                    fontWeight: entry.key.toLowerCase() == 'titolo' ? FontWeight.bold : null,
-                  ),
-                ),
+    return Card(
+      elevation: 2,
+      child: Padding(
+        padding: const EdgeInsets.all(8.0),
+        child: DataTable2(
+          columnSpacing: 12,
+          horizontalMargin: 12,
+          minWidth: 2000,
+          showCheckboxColumn: false,
+          sortAscending: true,
+          columns: columnKeys.map((key) {
+            ColumnSize size;
+            switch (key.toLowerCase()) {
+              case 'perapertura': size = ColumnSize.L; break;
+              case 'percradice': case 'percresto': size = ColumnSize.M; break;
+              case 'numpag': size = ColumnSize.S; break;
+              case 'titolo': size = ColumnSize.L; break;
+              case 'volume': case 'archivioprovenienza': size = ColumnSize.M; break;
+              default: size = ColumnSize.M;
+            }
+            return DataColumn2(
+              label: Text(
+                key,
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                overflow: TextOverflow.ellipsis,
               ),
+              size: size,
             );
           }).toList(),
-        );
-      }).toList(),
+          rows: _queryResults.map((row) {
+            return DataRow2(
+              onTap: () => _openPdfFromRow(row),
+              color: WidgetStateProperty.resolveWith<Color?>(
+                    (Set<WidgetState> states) {
+                  if (states.contains(WidgetState.hovered)) {
+                    return Colors.blue[50];
+                  }
+                  return null;
+                },
+              ),
+              cells: row.entries.map((entry) {
+                final cellValue = entry.value?.toString() ?? 'NULL';
+                final isPath = entry.key.toLowerCase().contains('perc') ||
+                    entry.key.toLowerCase().contains('perapertura');
+                final isTitle = entry.key.toLowerCase() == 'titolo';
+                final isPage = entry.key.toLowerCase() == 'numpag';
+
+                return DataCell(
+                  Tooltip(
+                    message: isPath ? 'Clicca per aprire PDF\n$cellValue' : cellValue,
+                    child: SelectableText(
+                      cellValue.length > 50 ? '${cellValue.substring(0, 50)}...' : cellValue,
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: isPath ? Colors.blue : (isPage ? Colors.green[700] : null),
+                        fontFamily: isPath ? 'monospace' : null,
+                        fontWeight: isTitle ? FontWeight.bold : null,
+                        fontStyle: cellValue == 'NULL' ? FontStyle.italic : null,
+                      ),
+                    ),
+                  ),
+                );
+              }).toList(),
+            );
+          }).toList(),
+        ),
+      ),
     );
   }
 }
