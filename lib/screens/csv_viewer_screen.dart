@@ -127,100 +127,6 @@ class _CsvViewerScreenState extends State<CsvViewerScreen>
     );
   }
 
-  /// ================================================
-  /// FUNZIONE PER COSTRUIRE PERCORSI PDF CORRETTI
-  /// ================================================
-  String _buildCorrectPdfPath(String basePath, String percResto, String volume) {
-    // Debug iniziale
-    print('🔧 _buildCorrectPdfPath chiamata:');
-    print('   Base: "$basePath"');
-    print('   PercResto: "$percResto"');
-    print('   Volume: "$volume"');
-    print('   Piattaforma: ${Platform.operatingSystem}');
-
-    // Normalizza i percorsi
-    String cleanBase = basePath.trim();
-    String cleanResto = percResto.trim();
-    String cleanVolume = volume.trim();
-
-    // CASO 1: SU WINDOWS
-    if (Platform.isWindows) {
-      // Normalizza separatori Windows
-      cleanBase = cleanBase.replaceAll('/', r'\');
-      cleanResto = cleanResto.replaceAll('/', r'\');
-
-      // Rimuovi slash finale da base se presente
-      if (cleanBase.endsWith(r'\')) {
-        cleanBase = cleanBase.substring(0, cleanBase.length - 1);
-        print('   Windows: rimosso \\ finale da base');
-      }
-
-      // Rimuovi slash iniziale da resto se presente
-      if (cleanResto.startsWith(r'\')) {
-        cleanResto = cleanResto.substring(1);
-        print('   Windows: rimosso \\ iniziale da percResto');
-      }
-
-      // Costruisci il percorso Windows-style
-      final result = '$cleanBase\\$cleanResto\\$cleanVolume';
-      print('   Windows risultato: "$result"');
-      return result;
-    }
-    // CASO 2: SU ANDROID/IOS/LINUX/MAC
-    else {
-      // Normalizza separatori Unix
-      cleanBase = cleanBase.replaceAll(r'\', '/');
-      cleanResto = cleanResto.replaceAll(r'\', '/');
-
-      // Rimuovi slash finale da base se presente
-      if (cleanBase.endsWith('/')) {
-        cleanBase = cleanBase.substring(0, cleanBase.length - 1);
-        print('   Unix: rimosso / finale da base');
-      }
-
-      // Rimuovi slash iniziale da resto se presente
-      if (cleanResto.startsWith('/')) {
-        cleanResto = cleanResto.substring(1);
-        print('   Unix: rimosso / iniziale da percResto');
-      }
-
-      // Costruisci il percorso Unix-style
-      final result = '$cleanBase/$cleanResto/$cleanVolume';
-      print('   Unix risultato: "$result"');
-      return result;
-    }
-  }
-
-  /// Funzione alternativa che usa path.join ma normalizza prima
-  String _buildPdfPathWithJoin(String basePath, String percResto, String volume) {
-    print('🔧 _buildPdfPathWithJoin:');
-
-    // Normalizza separatori
-    String normalizedBase = basePath.trim();
-    String normalizedResto = percResto.trim();
-
-    // Sostituisci doppi separatori
-    normalizedBase = normalizedBase.replaceAll(r'\\', r'\').replaceAll('//', '/');
-    normalizedResto = normalizedResto.replaceAll(r'\\', r'\').replaceAll('//', '/');
-
-    // Rimuovi slash finale da base
-    if (Platform.isWindows && normalizedBase.endsWith(r'\')) {
-      normalizedBase = normalizedBase.substring(0, normalizedBase.length - 1);
-    } else if (!Platform.isWindows && normalizedBase.endsWith('/')) {
-      normalizedBase = normalizedBase.substring(0, normalizedBase.length - 1);
-    }
-
-    // Rimuovi slash iniziale da resto
-    if (normalizedResto.startsWith('/') || normalizedResto.startsWith(r'\')) {
-      normalizedResto = normalizedResto.substring(1);
-    }
-
-    // Usa path.join
-    final result = p.join(normalizedBase, normalizedResto, volume);
-    print('   Result with join: "$result"');
-    return result;
-  }
-
   void _openFileFromRow(Map<String, dynamic> rowData) async {
     final volume = rowData['Volume'] as String? ?? '';
     final numPag = rowData['NumPag'] as String? ?? '';
@@ -229,7 +135,6 @@ class _CsvViewerScreenState extends State<CsvViewerScreen>
 
     final page = int.tryParse(numPag) ?? 1;
 
-    // CORREZIONE: Non assegnare il risultato a una variabile se è void
     await FileOpener.openFile(
       context: context,
       percResto: percResto,
@@ -237,48 +142,6 @@ class _CsvViewerScreenState extends State<CsvViewerScreen>
       tipoMulti: tipoMulti,
       page: page,
     );
-  }
-
-  void _handleOpenPdfAction({
-    required String volume,
-    required String numPag,
-    required String percResto,
-    required String tipoMulti,
-  }) async {
-    final page = int.tryParse(numPag) ?? 1;
-
-    // CORREZIONE: Non restituire valori da questa funzione
-    await FileOpener.openFile(
-      context: context,
-      percResto: percResto,
-      volume: volume,
-      tipoMulti: tipoMulti,
-      page: page,
-    );
-  }
-
-  void _showErrorSnackBar(String message) {
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(message),
-          backgroundColor: Colors.red,
-          duration: const Duration(seconds: 5),
-        ),
-      );
-    }
-  }
-
-  void _showSuccessSnackBar(String message) {
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(message),
-          backgroundColor: Colors.green,
-          duration: const Duration(seconds: 2),
-        ),
-      );
-    }
   }
 
   String _getCellValue(List<dynamic> row, String columnKey, {String defaultValue = 'N/D'}) {
@@ -353,7 +216,6 @@ class _CsvViewerScreenState extends State<CsvViewerScreen>
       }
     } catch (e) {
       print("ERRORE DURANTE IL CARICAMENTO DEL CSV: $e");
-      _showErrorSnackBar('Errore nel caricamento CSV: ${e.toString()}');
     }
   }
 
@@ -495,126 +357,98 @@ class _CsvViewerScreenState extends State<CsvViewerScreen>
   }
 
   Widget _buildCsvList() {
-    return Container(
-      color: Colors.grey[100],
-      child: ListView.builder(
-        itemCount: _filteredCsvData.length,
-        itemBuilder: (context, index) {
-          final currentRow = _filteredCsvData[index];
+    const Color coloreTitolo = Colors.black87;
+    const Color coloreDettagliPrimari = Colors.teal;
+    const Color coloreDettagliSecondari = Colors.black54;
+    final Color coloreVolume = Colors.red.shade800; // Colore per il volume
 
-          final titolo = _getCellValue(currentRow, 'Titolo');
-          final strumento = _getCellValue(currentRow, 'strumento');
-          final volume = _getCellValue(currentRow, 'Volume');
-          final numPag = _getCellValue(currentRow, 'NumPag');
-          final provenienza = _getCellValue(currentRow, 'ArchivioProvenienza');
-          final tipoMulti = _getCellValue(currentRow, 'TipoMulti', defaultValue: 'PDF');
-          final percResto = _getCellValue(currentRow, 'PercResto');
-          final autore = _getCellValue(currentRow, 'Autore');
+    return ListView.builder(
+      itemCount: _filteredCsvData.length,
+      itemBuilder: (context, index) {
+        final currentRow = _filteredCsvData[index];
 
-          // Controlla se mostrare l'header del titolo (gruppo)
-          bool showTitleHeader = index == 0;
-          if (index > 0) {
-            final prevRow = _filteredCsvData[index - 1];
-            final prevTitolo = _getCellValue(prevRow, 'Titolo');
-            showTitleHeader = titolo != prevTitolo;
+        final titolo = _getCellValue(currentRow, 'Titolo');
+        final strumento = _getCellValue(currentRow, 'strumento');
+        final volume = _getCellValue(currentRow, 'Volume');
+        final numPag = _getCellValue(currentRow, 'NumPag');
+        final provenienza = _getCellValue(currentRow, 'ArchivioProvenienza');
+        final tipoMulti = _getCellValue(currentRow, 'TipoMulti', defaultValue: 'PDF');
+        final percResto = _getCellValue(currentRow, 'PercResto');
+
+        bool showTitleHeader = false;
+        if (index == 0) {
+          showTitleHeader = true;
+        } else {
+          final prevRow = _filteredCsvData[index - 1];
+          final prevTitolo = _getCellValue(prevRow, 'Titolo');
+          if (titolo.toUpperCase() != prevTitolo.toUpperCase()) {
+            showTitleHeader = true;
           }
+        }
 
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // Header del titolo (se cambiato)
-              if (showTitleHeader)
-                Container(
-                  padding: const EdgeInsets.all(12.0),
-                  color: Colors.blueGrey[50],
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          titolo,
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16,
-                            color: Colors.blueGrey,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      if (autore.isNotEmpty && autore != 'N/D')
-                        Text(
-                          '($autore)',
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: Colors.grey[600],
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
+        final Color rowBackgroundColor = index.isEven
+            ? Colors.white
+            : const Color(0xFFF0F4F8);
 
-              // Tile principale
-              Card(
-                margin: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
-                elevation: 2,
-                child: ListTile(
-                  title: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Strumento: $strumento',
-                        style: const TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                      const SizedBox(height: 4),
-                      Text('Volume: $volume • Pagina: $numPag'),
-                      Text('Provenienza: $provenienza'),
-                      Text('Tipo: $tipoMulti'),
-                    ],
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (showTitleHeader)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                color: Colors.indigo,
+                child: Text(
+                  titolo.toUpperCase(),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                    color: Colors.white,
                   ),
-                  subtitle: percResto.isNotEmpty && percResto != 'N/D'
-                      ? Text(
-                    'Percorso: $percResto',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.grey[600],
-                      fontFamily: 'monospace',
-                    ),
-                  )
-                      : null,
-                  trailing: IconButton(
-                    icon: const Icon(Icons.picture_as_pdf, color: Colors.red),
-                    tooltip: 'Apri File',
-                    onPressed: () {
-                      _handleOpenPdfAction(
-                        volume: volume,
-                        numPag: numPag,
-                        percResto: percResto,
-                        tipoMulti: tipoMulti,
-                      );
-                    },
-                  ),
-                  onTap: () {
-                    // Creare mappa dei dati per _openFileFromRow
-                    Map<String, dynamic> rowData = {
-                      'Volume': volume,
-                      'NumPag': numPag,
-                      'PercResto': percResto,
-                      'TipoMulti': tipoMulti,
-                      'strumento': strumento,
-                      'Titolo': titolo,
-                      'Autore': autore,
-                      'ArchivioProvenienza': provenienza,
-                    };
-                    _openFileFromRow(rowData);
-                  },
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
-
-              // Divisore tra gli item (opzionale)
-              const Divider(height: 1, thickness: 0.5),
-            ],
-          );
-        },
-      ),
+            InkWell(
+              onTap: () {
+                Map<String, dynamic> rowData = {
+                  'Volume': volume,
+                  'NumPag': numPag,
+                  'PercResto': percResto,
+                  'TipoMulti': tipoMulti,
+                };
+                _openFileFromRow(rowData);
+              },
+              child: Container(
+                color: rowBackgroundColor,
+                padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+                child: Text.rich(
+                  TextSpan(
+                    style: const TextStyle(fontSize: 12.0),
+                    children: <TextSpan>[
+                      const TextSpan(text: 'Strumento: ', style: TextStyle(fontWeight: FontWeight.w500, color: coloreDettagliSecondari)),
+                      TextSpan(text: strumento, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: coloreTitolo)),
+                      if (numPag.isNotEmpty && numPag != 'N/D') ...[
+                        const TextSpan(text: ' a Pag: ', style: TextStyle(fontWeight: FontWeight.w500, color: coloreDettagliSecondari)),
+                        TextSpan(text: numPag, style: const TextStyle(fontWeight: FontWeight.normal, color: coloreDettagliPrimari)),
+                      ],
+                      if (volume.isNotEmpty && volume != 'N/D') ...[
+                        const TextSpan(text: ' del Volume: ', style: TextStyle(fontWeight: FontWeight.w500, color: coloreDettagliSecondari)),
+                        TextSpan(text: volume, style: TextStyle(fontWeight: FontWeight.normal, color: coloreVolume)), // Colore volume modificato
+                      ],
+                      if (provenienza.isNotEmpty && provenienza != 'N/D') ...[
+                        const TextSpan(text: ' Prov: ', style: TextStyle(fontWeight: FontWeight.w500, color: coloreDettagliSecondari)),
+                        TextSpan(text: provenienza, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: coloreTitolo)),
+                      ],
+                      const TextSpan(text: ' Mat: ', style: TextStyle(fontWeight: FontWeight.w500, color: coloreDettagliSecondari)),
+                      TextSpan(text: tipoMulti.isNotEmpty ? tipoMulti : "N/D", style: const TextStyle(fontWeight: FontWeight.normal, color: coloreDettagliPrimari)),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            const Divider(height: 1, thickness: 1.0, color: Colors.black12),
+          ],
+        );
+      },
     );
   }
 }
