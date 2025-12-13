@@ -1,4 +1,4 @@
-﻿// lib/screens/funzioni_variazione_dati_screen.dart - VERSIONE CORRETTA
+﻿// lib/screens/funzioni_variazione_dati_screen.dart - VERSIONE CON NUOVA VISUALIZZAZIONE
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -65,19 +65,14 @@ class _FunzioniVariazioneDatiScreenState extends State<FunzioniVariazioneDatiScr
     final text = searchText.trim();
     if (text.isEmpty) return '';
 
-    // Lista di operatori FTS che l'utente potrebbe usare intenzionalmente
     final ftsOperators = [' OR ', ' AND ', ' NOT ', ' NEAR(', '*', '"', '(', ')', '-'];
-
-    // Controlla se l'utente sta usando operatori avanzati
     final hasAdvancedOperators = ftsOperators.any((op) => text.contains(op));
 
     if (hasAdvancedOperators) {
-      // L'utente sa cosa sta facendo, lascia il testo com'è
       debugPrint('🔧 Ricerca avanzata rilevata, testo lasciato invariato');
       return text;
     }
 
-    // Splitta in parole, filtra vuoti e pulisci
     final words = text.split(' ')
         .where((word) => word.trim().isNotEmpty)
         .map((word) => word.trim())
@@ -85,36 +80,22 @@ class _FunzioniVariazioneDatiScreenState extends State<FunzioniVariazioneDatiScr
 
     if (words.isEmpty) return '';
 
-    // Se è una singola parola, aggiungi wildcard finale se non c'è già
     if (words.length == 1) {
       final word = words[0];
-      // Aggiungi wildcard finale se:
-      // 1. La parola ha almeno 3 caratteri
-      // 2. Non termina già con wildcard
-      // 3. Non contiene altri operatori speciali
-      if (word.length >= 3 &&
-          !word.endsWith('*') &&
-          !word.contains('"') &&
-          !word.contains('(') &&
-          !word.contains(')')) {
+      if (word.length >= 3 && !word.endsWith('*') && !word.contains('"')) {
         return '$word*';
       }
       return word;
     }
 
-    // Per più parole: unisci con AND e aggiungi wildcard alle parole lunghe
     final processedWords = words.map((word) {
-      // Aggiungi wildcard finale alle parole con almeno 3 caratteri
-      if (word.length >= 3 &&
-          !word.endsWith('*') &&
-          !word.contains('"')) {
+      if (word.length >= 3 && !word.endsWith('*') && !word.contains('"')) {
         return '$word*';
       }
       return word;
     }).toList();
 
     final ftsQuery = processedWords.join(' AND ');
-
     debugPrint('🔧 Ricerca trasformata: "$text" -> "$ftsQuery"');
     return ftsQuery;
   }
@@ -133,92 +114,58 @@ class _FunzioniVariazioneDatiScreenState extends State<FunzioniVariazioneDatiScr
       final whereClauses = <String>[];
       final whereArgs = <dynamic>[];
 
-      // 1. RICERCA FTS CON AND SU TUTTE LE PAROLE
       if (_ricercaController.text.isNotEmpty) {
         final ftsQuery = _buildFtsQuery(_ricercaController.text);
-
-        whereClauses.add('a.id_univoco_globale IN (SELECT rowid FROM spartiti_fts WHERE spartiti_fts MATCH ?)');
-        whereArgs.add(ftsQuery);
+        if (ftsQuery.isNotEmpty) {
+            whereClauses.add('a.id_univoco_globale IN (SELECT rowid FROM spartiti_fts WHERE spartiti_fts MATCH ?)');
+            whereArgs.add(ftsQuery);
+        }
       }
 
-      // 2. FILTRI LIKE
       if (_tipoMultiController.text.isNotEmpty) {
-        whereClauses.add('a.tipoMulti LIKE ?');
-        whereArgs.add(_tipoMultiController.text);
+        whereClauses.add('a.TipoMulti LIKE ?');
+        whereArgs.add('%${_tipoMultiController.text}%');
       }
       if (_volumeController.text.isNotEmpty) {
         whereClauses.add('a.volume LIKE ?');
-        whereArgs.add(_volumeController.text);
+        whereArgs.add('%${_volumeController.text}%');
       }
       if (_provenienzaController.text.isNotEmpty) {
         whereClauses.add('a.ArchivioProvenienza LIKE ?');
-        whereArgs.add(_provenienzaController.text);
+        whereArgs.add('%${_provenienzaController.text}%');
       }
       if (_strumentoController.text.isNotEmpty) {
         whereClauses.add('a.strumento LIKE ?');
-        whereArgs.add(_strumentoController.text);
+        whereArgs.add('%${_strumentoController.text}%');
       }
 
-      // 3. COSTRUISCI QUERY FINALE
       String whereStatement = whereClauses.isNotEmpty ? 'WHERE ${whereClauses.join(' AND ')}' : '';
-
-      final sanitizedPercorsoPdf = gPercorsoPdf.replaceAll("'", "''");
 
       final sql = """
         SELECT DISTINCT 
-          a.titolo,
-          a.NumPag,
-          a.volume,
-          a.ArchivioProvenienza,
-          a.strumento,
-          a.autore,
-          a.PrimoLink,
-          a.PercResto,
-          a.TipoMulti,
-          a.id_univoco_globale,
-          '$sanitizedPercorsoPdf' as percradice,
-          '$sanitizedPercorsoPdf' || COALESCE(a.PercResto, '') || '/' || a.Volume as PerApertura
+          a.titolo, a.NumPag, a.volume, a.ArchivioProvenienza, a.strumento, a.autore, 
+          a.PrimoLink, a.PercResto, a.TipoMulti, a.id_univoco_globale
         FROM spartiti a
         $whereStatement
-        AND (a.TipoMulti IS NULL OR a.TipoMulti LIKE 'PDF%' OR a.TipoMulti LIKE 'PD%')
         ORDER BY a.titolo COLLATE NOCASE, a.strumento
-        LIMIT 100
+        LIMIT 200
       """;
 
-      // DEBUG DETTAGLIATO
       debugPrint("\n" + "="*80);
       debugPrint("🔍 RICERCA ESEGUITA:");
       debugPrint("="*80);
-      debugPrint("Testo ricerca: ${_ricercaController.text}");
-      debugPrint("Query FTS generata: ${whereArgs.isNotEmpty ? whereArgs[0] : 'Nessuna'}");
-      debugPrint("SQL completo: $sql");
+      debugPrint("SQL: $sql");
+      debugPrint("Args: $whereArgs");
       debugPrint("="*80);
 
       final dbStopwatch = Stopwatch()..start();
       final results = await dbCatalogoAttivo!.rawQuery(sql, whereArgs);
       dbStopwatch.stop();
 
-      // Normalizza percorsi per il display
-      final normalizedResults = results.map((row) {
-        final newRow = Map<String, dynamic>.from(row);
-
-        // Normalizza PercResto
-        if (newRow.containsKey('PercResto') && newRow['PercResto'] != null) {
-          newRow['PercResto'] = _normalizePath(newRow['PercResto'] as String);
-        }
-
-        // Normalizza PerApertura
-        if (newRow.containsKey('PerApertura') && newRow['PerApertura'] != null) {
-          newRow['PerApertura'] = _normalizePath(newRow['PerApertura'] as String);
-        }
-
-        return newRow;
-      }).toList();
-
       if (mounted) {
         final uiStopwatch = Stopwatch()..start();
         setState(() {
-          _queryResults = normalizedResults;
+          _queryResults = results;
           _isQueryRunning = false;
           _dbQueryTime = dbStopwatch.elapsed;
         });
@@ -234,7 +181,6 @@ class _FunzioniVariazioneDatiScreenState extends State<FunzioniVariazioneDatiScr
 
     } catch (e) {
       debugPrint('❌ Errore ricerca: $e');
-
       if (mounted) {
         setState(() {
           _error = "Errore ricerca: ${e.toString()}";
@@ -249,33 +195,24 @@ class _FunzioniVariazioneDatiScreenState extends State<FunzioniVariazioneDatiScr
     try {
       final lowerCaseRowData = {for (var k in rowData.keys) k.toLowerCase(): rowData[k]};
 
-      // Usa PerApertura se disponibile
-      String? filePath = lowerCaseRowData['perapertura'] as String?;
+      final percResto = lowerCaseRowData['percresto'] as String? ?? '';
+      final volume = lowerCaseRowData['volume'] as String? ?? '';
+      final tipoMulti = lowerCaseRowData['tipomulti'] as String? ?? 'PDF';
       final pageNum = lowerCaseRowData['numpag'];
 
-      if (filePath == null || filePath.isEmpty) {
-        // Fallback: costruisci da componenti
-        final percResto = lowerCaseRowData['percresto'] as String? ?? '';
-        final volume = lowerCaseRowData['volume'] as String? ?? '';
-
-        if (volume.isEmpty) {
-          _showError('Volume non specificato');
-          return;
-        }
-
-        filePath = _buildPdfPath(gPercorsoPdf, percResto, volume);
+      if (volume.isEmpty) {
+        _showError('Volume non specificato per questo record.');
+        return;
       }
 
       final page = int.tryParse(pageNum?.toString().trim() ?? '1') ?? 1;
 
-      debugPrint('📂 Apertura PDF:');
-      debugPrint('   Percorso: $filePath');
-      debugPrint('   Pagina: $page');
-
-      await OpenerPlatformInterface.instance.openPdf(
-        context: context,
-        filePath: filePath,
-        page: page,
+      await FileOpener.openFile(
+          context: context,
+          percResto: percResto,
+          volume: volume,
+          tipoMulti: tipoMulti,
+          page: page
       );
 
     } catch (e) {
@@ -284,51 +221,8 @@ class _FunzioniVariazioneDatiScreenState extends State<FunzioniVariazioneDatiScr
     }
   }
 
-  String _buildPdfPath(String basePath, String percResto, String volume) {
-    // Normalizza percorsi
-    String cleanBase = _normalizePath(basePath);
-    String cleanResto = _normalizePath(percResto);
-    String cleanVolume = volume.trim();
-
-    // Costruisci con separatori corretti
-    if (Platform.isWindows) {
-      return '$cleanBase\\$cleanResto\\$cleanVolume'
-          .replaceAll(r'\\', r'\')
-          .replaceAll('//', r'\');
-    } else {
-      return '$cleanBase/$cleanResto/$cleanVolume'
-          .replaceAll(r'\', '/')
-          .replaceAll('//', '/');
-    }
-  }
-
-  String _normalizePath(String path) {
-    String normalized = path.trim();
-
-    if (Platform.isWindows) {
-      normalized = normalized.replaceAll('/', r'\');
-      // Rimuovi backslash iniziali/finali
-      while (normalized.startsWith(r'\')) {
-        normalized = normalized.substring(1);
-      }
-      while (normalized.endsWith(r'\')) {
-        normalized = normalized.substring(0, normalized.length - 1);
-      }
-    } else {
-      normalized = normalized.replaceAll(r'\', '/');
-      // Rimuovi slash iniziali/finali
-      while (normalized.startsWith('/')) {
-        normalized = normalized.substring(1);
-      }
-      while (normalized.endsWith('/')) {
-        normalized = normalized.substring(0, normalized.length - 1);
-      }
-    }
-
-    return normalized;
-  }
-
   void _showError(String message) {
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
@@ -350,14 +244,9 @@ class _FunzioniVariazioneDatiScreenState extends State<FunzioniVariazioneDatiScr
     });
   }
 
-  // ================================================
-  // UI COMPONENTS
-  // ================================================
-
   @override
   Widget build(BuildContext context) {
     super.build(context);
-
     return Scaffold(
       body: Padding(
         padding: const EdgeInsets.all(16.0),
@@ -426,35 +315,20 @@ class _FunzioniVariazioneDatiScreenState extends State<FunzioniVariazioneDatiScr
       children: [
         Row(
           children: [
-            // Pulsante ricerca principale
             FilledButton.icon(
               onPressed: _isQueryRunning ? null : _executeQuery,
               icon: _isQueryRunning
-                  ? const SizedBox(
-                width: 16,
-                height: 16,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              )
+                  ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)) 
                   : const Icon(Icons.search, size: 18),
               label: Text(_isQueryRunning ? 'Ricerca...' : 'Cerca Spartiti'),
-              style: FilledButton.styleFrom(
-                backgroundColor: Colors.blue[700],
-                foregroundColor: Colors.white,
-              ),
             ),
-
             const SizedBox(width: 12),
-
-            // Pulsante pulisci
             OutlinedButton.icon(
               onPressed: _clearFilters,
               icon: const Icon(Icons.clear_all, size: 18),
               label: const Text('Pulisci Filtri'),
             ),
-
             const Spacer(),
-
-            // Contatore risultati
             if (!_isQueryRunning && _queryResults.isNotEmpty)
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -463,59 +337,31 @@ class _FunzioniVariazioneDatiScreenState extends State<FunzioniVariazioneDatiScr
                   borderRadius: BorderRadius.circular(16),
                   border: Border.all(color: Colors.green[100]!),
                 ),
-                child: Text(
-                  '${_queryResults.length} risultati',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: Colors.green,
-                  ),
+                child: Text('${_queryResults.length} risultati',
+                  style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.green,)
                 ),
               ),
           ],
         ),
-
         const SizedBox(height: 8),
-
-        // Timing info
         if (_dbQueryTime != null || _uiBuildTime != null)
           Wrap(
             spacing: 12,
             children: [
-              if (_dbQueryTime != null)
-                _buildTimingChip(
-                  icon: Icons.timer,
-                  label: 'DB: ${_dbQueryTime!.inMilliseconds}ms',
-                  color: _dbQueryTime!.inMilliseconds > 500 ? Colors.orange : Colors.green,
-                ),
-              if (_uiBuildTime != null)
-                _buildTimingChip(
-                  icon: Icons.dashboard,
-                  label: 'UI: ${_uiBuildTime!.inMilliseconds}ms',
-                  color: _uiBuildTime!.inMilliseconds > 100 ? Colors.orange : Colors.green,
-                ),
+              if (_dbQueryTime != null) _buildTimingChip(icon: Icons.timer, label: 'DB: ${_dbQueryTime!.inMilliseconds}ms', color: _dbQueryTime!.inMilliseconds > 500 ? Colors.orange : Colors.green),
+              if (_uiBuildTime != null) _buildTimingChip(icon: Icons.dashboard, label: 'UI: ${_uiBuildTime!.inMilliseconds}ms', color: _uiBuildTime!.inMilliseconds > 100 ? Colors.orange : Colors.green),
             ],
           ),
-
-        // Messaggio errore
         if (_error != null && !_isQueryRunning) ...[
           const SizedBox(height: 8),
           Container(
             padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: Colors.red[50],
-              borderRadius: BorderRadius.circular(4),
-              border: Border.all(color: Colors.red[100]!),
-            ),
+            decoration: BoxDecoration(color: Colors.red[50], borderRadius: BorderRadius.circular(4), border: Border.all(color: Colors.red[100]!)),
             child: Row(
               children: [
                 const Icon(Icons.error_outline, color: Colors.red, size: 16),
                 const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    _error!,
-                    style: const TextStyle(color: Colors.red, fontSize: 12),
-                  ),
-                ),
+                Expanded(child: Text(_error!, style: const TextStyle(color: Colors.red, fontSize: 12))),
               ],
             ),
           ),
@@ -530,10 +376,7 @@ class _FunzioniVariazioneDatiScreenState extends State<FunzioniVariazioneDatiScr
       children: [
         Icon(icon, size: 14, color: color),
         const SizedBox(width: 4),
-        Text(
-          label,
-          style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: color),
-        ),
+        Text(label, style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: color)),
       ],
     );
   }
@@ -552,148 +395,129 @@ class _FunzioniVariazioneDatiScreenState extends State<FunzioniVariazioneDatiScr
       );
     }
 
-    if (_error != null && _queryResults.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(32.0),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(Icons.error_outline, size: 64, color: Colors.red),
-              const SizedBox(height: 16),
-              SelectableText(
-                _error!,
-                style: const TextStyle(color: Colors.red),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 16),
-              ElevatedButton.icon(
-                onPressed: _executeQuery,
-                icon: const Icon(Icons.refresh),
-                label: const Text('Riprova Ricerca'),
-              ),
-            ],
-          ),
-        ),
-      );
+    if (_error != null) {
+        return Center(
+            child: Padding(
+                padding: const EdgeInsets.all(32.0),
+                child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                        const Icon(Icons.error_outline, size: 48, color: Colors.red),
+                        const SizedBox(height: 16),
+                        const Text('Errore nella ricerca', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                        const SizedBox(height: 8),
+                        SelectableText(_error!, textAlign: TextAlign.center, style: const TextStyle(color: Colors.red)),
+                    ],
+                ),
+            ),
+        );
     }
 
     if (_queryResults.isEmpty) {
-      return Center(
+      return const Center(
         child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+                Icon(Icons.search_off, size: 64, color: Colors.grey),
+                SizedBox(height: 16),
+                Text('Nessun risultato. Inizia una nuova ricerca.', style: TextStyle(fontSize: 16, color: Colors.grey)),
+            ],
+        ),
+      );
+    }
+
+    // ========= NUOVA VISUALIZZAZIONE =========
+    const Color coloreTitolo = Colors.black87;
+    const Color coloreDettagliPrimari = Colors.teal;
+    const Color coloreDettagliSecondari = Colors.black54;
+    final Color coloreVolume = Colors.red.shade800;
+
+    return ListView.builder(
+      itemCount: _queryResults.length,
+      itemBuilder: (context, index) {
+        final currentRow = _queryResults[index];
+
+        // Estrai tutti i dati necessari per la riga
+        final titolo = currentRow['titolo'] as String? ?? 'N/D';
+        final strumento = currentRow['strumento'] as String? ?? 'N/D';
+        final volume = currentRow['volume'] as String? ?? '';
+        final numPag = (currentRow['NumPag'] ?? '').toString();
+        final provenienza = currentRow['ArchivioProvenienza'] as String? ?? '';
+        final tipoMulti = currentRow['TipoMulti'] as String? ?? 'PDF';
+
+        // Logica per mostrare l'header solo se il titolo cambia
+        bool showTitleHeader = false;
+        if (index == 0) {
+          showTitleHeader = true;
+        } else {
+          final prevRow = _queryResults[index - 1];
+          final prevTitolo = prevRow['titolo'] as String? ?? '';
+          if (titolo.toUpperCase() != prevTitolo.toUpperCase()) {
+            showTitleHeader = true;
+          }
+        }
+
+        final Color rowBackgroundColor = index.isEven
+            ? Colors.white
+            : const Color(0xFFF0F4F8);
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Icon(Icons.search, size: 64, color: Colors.grey),
-            const SizedBox(height: 16),
-            Text(
-              _ricercaController.text.isEmpty
-                  ? 'Inserisci un termine di ricerca'
-                  : 'Nessun risultato trovato',
-              style: const TextStyle(color: Colors.grey, fontSize: 16),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'Prova con criteri diversi o usa wildcard (%)',
-              style: TextStyle(color: Colors.grey),
+            // 1. HEADER DI GRUPPO o SEGNAPOSTO
+            if (showTitleHeader)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                color: Colors.indigo[800], 
+                child: Text(
+                  titolo.toUpperCase(),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                    color: Colors.white,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              )
+            else
+              // Segnaposto per mantenere allineamento e separazione
+              const Divider(height: 1, thickness: 1, indent: 16, endIndent: 16),
+
+            // 2. RIGA DI DETTAGLIO (cliccabile)
+            InkWell(
+              onTap: () => _openPdfFromRow(currentRow),
+              child: Container(
+                color: rowBackgroundColor,
+                padding: const EdgeInsets.fromLTRB(16.0, 12.0, 16.0, 12.0),
+                child: Text.rich(
+                  TextSpan(
+                    style: const TextStyle(fontSize: 13.0, color: Colors.black87), 
+                    children: <TextSpan>[
+                      const TextSpan(text: 'Strumento: ', style: TextStyle(fontWeight: FontWeight.w500, color: coloreDettagliSecondari)),
+                      TextSpan(text: strumento, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: coloreTitolo)),
+                      if (numPag.isNotEmpty && numPag != 'N/D') ...[
+                        const TextSpan(text: ' a Pag: ', style: TextStyle(fontWeight: FontWeight.w500, color: coloreDettagliSecondari)),
+                        TextSpan(text: numPag, style: const TextStyle(fontWeight: FontWeight.normal, color: coloreDettagliPrimari)),
+                      ],
+                      if (volume.isNotEmpty && volume != 'N/D') ...[
+                        const TextSpan(text: ' del Volume: ', style: TextStyle(fontWeight: FontWeight.w500, color: coloreDettagliSecondari)),
+                        TextSpan(text: volume, style: TextStyle(fontWeight: FontWeight.bold, color: coloreVolume)),
+                      ],
+                      if (provenienza.isNotEmpty && provenienza != 'N/D') ...[
+                        const TextSpan(text: ' Prov: ', style: TextStyle(fontWeight: FontWeight.w500, color: coloreDettagliSecondari)),
+                        TextSpan(text: provenienza, style: const TextStyle(fontWeight: FontWeight.normal, fontStyle: FontStyle.italic, color: Colors.black54)),
+                      ],
+                      const TextSpan(text: ' Mat: ', style: TextStyle(fontWeight: FontWeight.w500, color: coloreDettagliSecondari)),
+                      TextSpan(text: tipoMulti.isNotEmpty ? tipoMulti : "N/D", style: const TextStyle(fontWeight: FontWeight.normal, color: coloreDettagliPrimari)),
+                    ],
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
             ),
           ],
-        ),
-      );
-    }
-
-    // Colonne da mostrare (priorità)
-    final preferredColumns = ['titolo', 'strumento', 'volume', 'ArchivioProvenienza', 'NumPag'];
-    final availableColumns = _queryResults.first.keys
-        .where((key) => preferredColumns.contains(key.toLowerCase()))
-        .toList();
-
-    // Se mancano colonne preferite, aggiungi altre disponibili
-    if (availableColumns.length < 3) {
-      availableColumns.addAll(
-          _queryResults.first.keys
-              .where((key) => !availableColumns.contains(key))
-              .take(3 - availableColumns.length)
-      );
-    }
-
-    return Card(
-      elevation: 2,
-      child: Padding(
-        padding: const EdgeInsets.all(8.0),
-        child: DataTable2(
-          columnSpacing: 12,
-          horizontalMargin: 12,
-          minWidth: 1000,
-          showCheckboxColumn: false,
-          sortAscending: true,
-          columns: availableColumns.map((key) {
-            return DataColumn2(
-              label: Text(
-                _formatColumnName(key),
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
-                overflow: TextOverflow.ellipsis,
-              ),
-              size: _getColumnSize(key),
-            );
-          }).toList(),
-
-          rows: _queryResults.map((row) {
-            return DataRow2(
-              onTap: () => _openPdfFromRow(row),
-              color: WidgetStateProperty.resolveWith<Color?>((states) {
-                if (states.contains(WidgetState.hovered)) {
-                  return Colors.blue[50];
-                }
-                return null;
-              }),
-              cells: availableColumns.map((column) {
-                final value = row[column]?.toString() ?? '';
-                final isPage = column.toLowerCase() == 'numpag';
-                final isTitle = column.toLowerCase() == 'titolo';
-
-                return DataCell(
-                  Tooltip(
-                    message: value,
-                    child: SelectableText(
-                      value.length > 30 ? '${value.substring(0, 30)}...' : value,
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: isTitle ? FontWeight.w500 : FontWeight.normal,
-                        color: isPage ? Colors.green[700] : null,
-                      ),
-                    ),
-                  ),
-                );
-              }).toList(),
-            );
-          }).toList(),
-        ),
-      ),
+        );
+      },
     );
-  }
-
-  String _formatColumnName(String column) {
-    final names = {
-      'titolo': 'Titolo',
-      'strumento': 'Strumento',
-      'volume': 'Volume',
-      'archivioprovenienza': 'Provenienza',
-      'numpag': 'Pagina',
-      'autore': 'Autore',
-      'percresto': 'Percorso',
-      'perapertura': 'File PDF',
-      'tipoMulti': 'Tipo',
-    };
-    return names[column.toLowerCase()] ?? column;
-  }
-
-  ColumnSize _getColumnSize(String column) {
-    switch (column.toLowerCase()) {
-      case 'titolo': return ColumnSize.L;
-      case 'perapertura': return ColumnSize.L;
-      case 'volume': case 'archivioprovenienza': return ColumnSize.M;
-      case 'strumento': case 'numpag': case 'tipoMulti': return ColumnSize.S;
-      default: return ColumnSize.M;
-    }
   }
 }
