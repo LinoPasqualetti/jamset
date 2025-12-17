@@ -1,12 +1,11 @@
-//////////// variaCatalogo.dart
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:sqflite/sqflite.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:path/path.dart' as p;
+import 'package:sqflite/sqflite.dart';
 
-import 'package:jamsetgemini/main.dart'; // 1. IMPORT CORRETTO
-import 'package:jamsetgemini/screens/lista_spartiti_catalogo.dart'; // 1. IMPORT CORRETTO
+import 'package:jamsetgemini/main.dart';
+import 'package:jamsetgemini/screens/lista_spartiti_catalogo.dart';
 
 class VariaCatalogoScreen extends StatefulWidget {
   final Map<String, dynamic>? initialData;
@@ -57,10 +56,10 @@ class _VariaCatalogoScreenState extends State<VariaCatalogoScreen> {
   }
 
   Future<void> _saveData() async {
-    if (!_formKey.currentState!.validate() || dbGlobale == null) return;
+    if (!_formKey.currentState!.validate() || databaseService.dbGlobale == null) return;
 
     try {
-      final db = dbGlobale!;
+      final db = databaseService.dbGlobale!;
       
       Map<String, dynamic> dataToSave = {};
       _controllers.forEach((key, controller) => dataToSave[key] = controller.text);
@@ -72,6 +71,8 @@ class _VariaCatalogoScreenState extends State<VariaCatalogoScreen> {
       } else {
         await db.update('elenco_cataloghi', dataToSave, where: 'id = ?', whereArgs: [dataToSave['id']]);
       }
+      
+      await databaseService.synchronizeCatalogs();
 
       if(mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Dati salvati con successo!'), backgroundColor: Colors.green));
@@ -83,7 +84,7 @@ class _VariaCatalogoScreenState extends State<VariaCatalogoScreen> {
   }
 
   Future<void> _deleteData() async {
-    if (_isNewRecord || widget.initialData == null || dbGlobale == null) return;
+    if (_isNewRecord || widget.initialData == null || databaseService.dbGlobale == null) return;
 
     final id = widget.initialData!['id'];
     if (id == 1) {
@@ -109,8 +110,10 @@ class _VariaCatalogoScreenState extends State<VariaCatalogoScreen> {
 
     if (confirmed) {
       try {
-        final db = dbGlobale!;
+        final db = databaseService.dbGlobale!;
         await db.delete('elenco_cataloghi', where: 'id = ?', whereArgs: [id]);
+
+        await databaseService.synchronizeCatalogs();
 
         if(mounted) {
             ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Catalogo eliminato.'), backgroundColor: Colors.orange));
@@ -145,7 +148,6 @@ class _VariaCatalogoScreenState extends State<VariaCatalogoScreen> {
     );
   }
 
-  // --- NUOVA FUNZIONE PER MOSTRARE INFO DB ---
   void _showDbInfo() {
     final dbName = _isNewRecord ? '(nuovo catalogo)' : _controllers['nome_file_db']?.text ?? 'N/D';
     final fullPath = p.join(gDatabasePath, dbName);
@@ -188,7 +190,6 @@ class _VariaCatalogoScreenState extends State<VariaCatalogoScreen> {
       appBar: AppBar(
         title: Text(_isNewRecord ? 'Nuovo Catalogo' : 'Varia Catalogo'),
         actions: [
-          // --- PULSANTE INFO AGGIUNTO ---
           IconButton(
             icon: const Icon(Icons.info_outline),
             onPressed: _showDbInfo,

@@ -3,7 +3,6 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:sqflite/sqflite.dart';
-import 'package:data_table_2/data_table_2.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:jamsetgemini/main.dart';
@@ -61,17 +60,9 @@ class _FunzioniVariazioneDatiScreenState extends State<FunzioniVariazioneDatiScr
   // FUNZIONI HELPER PRIVATE
   // ================================================
 
-  String _buildFtsQuery(String searchText) {
+  String _processSimpleSearchTerms(String searchText) {
     final text = searchText.trim();
     if (text.isEmpty) return '';
-
-    final ftsOperators = [' OR ', ' AND ', ' NOT ', ' NEAR(', '*', '"', '(', ')', '-'];
-    final hasAdvancedOperators = ftsOperators.any((op) => text.contains(op));
-
-    if (hasAdvancedOperators) {
-      debugPrint('🔧 Ricerca avanzata rilevata, testo lasciato invariato');
-      return text;
-    }
 
     final words = text.split(' ')
         .where((word) => word.trim().isNotEmpty)
@@ -80,14 +71,6 @@ class _FunzioniVariazioneDatiScreenState extends State<FunzioniVariazioneDatiScr
 
     if (words.isEmpty) return '';
 
-    if (words.length == 1) {
-      final word = words[0];
-      if (word.length >= 3 && !word.endsWith('*') && !word.contains('"')) {
-        return '$word*';
-      }
-      return word;
-    }
-
     final processedWords = words.map((word) {
       if (word.length >= 3 && !word.endsWith('*') && !word.contains('"')) {
         return '$word*';
@@ -95,13 +78,15 @@ class _FunzioniVariazioneDatiScreenState extends State<FunzioniVariazioneDatiScr
       return word;
     }).toList();
 
-    final ftsQuery = processedWords.join(' AND ');
-    debugPrint('🔧 Ricerca trasformata: "$text" -> "$ftsQuery"');
-    return ftsQuery;
+    return processedWords.join(' AND ');
   }
 
   Future<void> _executeQuery() async {
-    if (dbCatalogoAttivo == null || _isQueryRunning) return;
+    if (databaseService.dbCatalogoAttivo == null) {
+        setState(() => _error = "ERRORE: Nessun catalogo attivo. Vai in Impostazioni > Gestione Volumi.");
+        return;
+    }
+    if (_isQueryRunning) return;
 
     setState(() {
       _isQueryRunning = true;
@@ -115,10 +100,27 @@ class _FunzioniVariazioneDatiScreenState extends State<FunzioniVariazioneDatiScr
       final whereArgs = <dynamic>[];
 
       if (_ricercaController.text.isNotEmpty) {
-        final ftsQuery = _buildFtsQuery(_ricercaController.text);
-        if (ftsQuery.isNotEmpty) {
+        final searchText = _ricercaController.text.trim();
+        final ftsOperators = [' OR ', ' AND ', ' NOT ', ' NEAR(', '*', '"', '(', ')', '-', ':'];
+        final isAdvancedSearch = ftsOperators.any((op) => searchText.toUpperCase().contains(op));
+
+        String ftsMatchClause;
+        if (isAdvancedSearch) {
+          ftsMatchClause = searchText;
+          debugPrint('🔧 Usando query FTS avanzata: "$ftsMatchClause"');
+        } else {
+          final processedTerms = _processSimpleSearchTerms(searchText);
+          if (processedTerms.isNotEmpty) {
+            ftsMatchClause = '(titolo:$processedTerms) OR (autore:$processedTerms)';
+            debugPrint('🔧 Costruita query FTS per titolo/autore: "$ftsMatchClause"');
+          } else {
+            ftsMatchClause = '';
+          }
+        }
+
+        if (ftsMatchClause.isNotEmpty) {
             whereClauses.add('a.id_univoco_globale IN (SELECT rowid FROM spartiti_fts WHERE spartiti_fts MATCH ?)');
-            whereArgs.add(ftsQuery);
+            whereArgs.add(ftsMatchClause);
         }
       }
 
@@ -151,15 +153,13 @@ class _FunzioniVariazioneDatiScreenState extends State<FunzioniVariazioneDatiScr
         LIMIT 200
       """;
 
-      debugPrint("\n" + "="*80);
-      debugPrint("🔍 RICERCA ESEGUITA:");
-      debugPrint("="*80);
-      debugPrint("SQL: $sql");
-      debugPrint("Args: $whereArgs");
-      debugPrint("="*80);
+      print("\n--- QUERY IN ESECUZIONE ---");
+      print("SQL: $sql");
+      print("ARGOMENTI: $whereArgs");
+      print("---------------------------\n");
 
       final dbStopwatch = Stopwatch()..start();
-      final results = await dbCatalogoAttivo!.rawQuery(sql, whereArgs);
+      final results = await databaseService.dbCatalogoAttivo!.rawQuery(sql, whereArgs);
       dbStopwatch.stop();
 
       if (mounted) {
@@ -280,32 +280,7 @@ class _FunzioniVariazioneDatiScreenState extends State<FunzioniVariazioneDatiScr
           ),
           onSubmitted: (_) => _executeQuery(),
         ),
-        const SizedBox(height: 8),
-        const Text('Filtri (usare % per wildcard LIKE)', style: TextStyle(fontWeight: FontWeight.bold)),
-        Row(
-          children: [
-            Expanded(child: _buildFilterField(_strumentoController, 'Strumento')),
-            const SizedBox(width: 8),
-            Expanded(child: _buildFilterField(_volumeController, 'Volume')),
-            const SizedBox(width: 8),
-            Expanded(child: _buildFilterField(_provenienzaController, 'Provenienza')),
-            const SizedBox(width: 8),
-            Expanded(child: _buildFilterField(_tipoMultiController, 'TipoMulti')),
-          ],
-        )
       ],
-    );
-  }
-
-  Widget _buildFilterField(TextEditingController controller, String label) {
-    return TextField(
-      controller: controller,
-      decoration: InputDecoration(
-        labelText: label,
-        border: const OutlineInputBorder(),
-        isDense: true,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-      ),
     );
   }
 
@@ -327,6 +302,12 @@ class _FunzioniVariazioneDatiScreenState extends State<FunzioniVariazioneDatiScr
               onPressed: _clearFilters,
               icon: const Icon(Icons.clear_all, size: 18),
               label: const Text('Pulisci Filtri'),
+            ),
+            const SizedBox(width: 12),
+            OutlinedButton.icon(
+              onPressed: () => _showFiltersModal(context),
+              icon: const Icon(Icons.filter_alt_outlined, size: 18),
+              label: const Text('Filtri e Modalità'),
             ),
             const Spacer(),
             if (!_isQueryRunning && _queryResults.isNotEmpty)
@@ -367,6 +348,90 @@ class _FunzioniVariazioneDatiScreenState extends State<FunzioniVariazioneDatiScr
           ),
         ],
       ],
+    );
+  }
+
+  Future<void> _showFiltersModal(BuildContext context) async {
+    final tempStrumentoController = TextEditingController(text: _strumentoController.text);
+    final tempVolumeController = TextEditingController(text: _volumeController.text);
+    final tempProvenienzaController = TextEditingController(text: _provenienzaController.text);
+    final tempTipoMultiController = TextEditingController(text: _tipoMultiController.text);
+
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (BuildContext modalContext) {
+        return Container(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(modalContext).viewInsets.bottom,
+            top: 16,
+            left: 16,
+            right: 16,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text(
+                'Filtri Avanzati',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 16),
+              _buildFilterFieldModal(tempStrumentoController, 'Strumento (es: %piano%)'),
+              const SizedBox(height: 8),
+              _buildFilterFieldModal(tempVolumeController, 'Volume (es: vol%)'),
+              const SizedBox(height: 8),
+              _buildFilterFieldModal(tempProvenienzaController, 'Provenienza Archivio'),
+              const SizedBox(height: 8),
+              _buildFilterFieldModal(tempTipoMultiController, 'Tipo Multimedia (PDF, MP3, ...)'),
+              const SizedBox(height: 24),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () {
+                        Navigator.pop(modalContext);
+                      },
+                      icon: const Icon(Icons.close, size: 18),
+                      label: const Text('Annulla'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed: () {
+                        _strumentoController.text = tempStrumentoController.text;
+                        _volumeController.text = tempVolumeController.text;
+                        _provenienzaController.text = tempProvenienzaController.text;
+                        _tipoMultiController.text = tempTipoMultiController.text;
+                        Navigator.pop(modalContext);
+                        _executeQuery();
+                      },
+                      icon: const Icon(Icons.check, size: 18),
+                      label: const Text('Applica Filtri'),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildFilterFieldModal(TextEditingController controller, String label) {
+    return TextField(
+      controller: controller,
+      decoration: InputDecoration(
+        labelText: label,
+        border: const OutlineInputBorder(),
+        isDense: true,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      ),
     );
   }
 
@@ -426,26 +491,25 @@ class _FunzioniVariazioneDatiScreenState extends State<FunzioniVariazioneDatiScr
       );
     }
 
-    // ========= NUOVA VISUALIZZAZIONE =========
     const Color coloreTitolo = Colors.black87;
     const Color coloreDettagliPrimari = Colors.teal;
     const Color coloreDettagliSecondari = Colors.black54;
     final Color coloreVolume = Colors.red.shade800;
+    final Color coloreStrumento = Colors.blue.shade900;
 
     return ListView.builder(
       itemCount: _queryResults.length,
       itemBuilder: (context, index) {
         final currentRow = _queryResults[index];
 
-        // Estrai tutti i dati necessari per la riga
         final titolo = currentRow['titolo'] as String? ?? 'N/D';
         final strumento = currentRow['strumento'] as String? ?? 'N/D';
+        final autore = currentRow['autore'] as String? ?? '';
         final volume = currentRow['volume'] as String? ?? '';
         final numPag = (currentRow['NumPag'] ?? '').toString();
         final provenienza = currentRow['ArchivioProvenienza'] as String? ?? '';
         final tipoMulti = currentRow['TipoMulti'] as String? ?? 'PDF';
 
-        // Logica per mostrare l'header solo se il titolo cambia
         bool showTitleHeader = false;
         if (index == 0) {
           showTitleHeader = true;
@@ -464,11 +528,10 @@ class _FunzioniVariazioneDatiScreenState extends State<FunzioniVariazioneDatiScr
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // 1. HEADER DI GRUPPO o SEGNAPOSTO
             if (showTitleHeader)
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-                color: Colors.indigo[800], 
+                color: Colors.indigo[800],
                 child: Text(
                   titolo.toUpperCase(),
                   style: const TextStyle(
@@ -480,10 +543,8 @@ class _FunzioniVariazioneDatiScreenState extends State<FunzioniVariazioneDatiScr
                 ),
               )
             else
-              // Segnaposto per mantenere allineamento e separazione
               const Divider(height: 1, thickness: 1, indent: 16, endIndent: 16),
 
-            // 2. RIGA DI DETTAGLIO (cliccabile)
             InkWell(
               onTap: () => _openPdfFromRow(currentRow),
               child: Container(
@@ -491,10 +552,13 @@ class _FunzioniVariazioneDatiScreenState extends State<FunzioniVariazioneDatiScr
                 padding: const EdgeInsets.fromLTRB(16.0, 12.0, 16.0, 12.0),
                 child: Text.rich(
                   TextSpan(
-                    style: const TextStyle(fontSize: 13.0, color: Colors.black87), 
+                    style: const TextStyle(fontSize: 13.0, color: Colors.black87),
                     children: <TextSpan>[
-                      const TextSpan(text: 'Strumento: ', style: TextStyle(fontWeight: FontWeight.w500, color: coloreDettagliSecondari)),
-                      TextSpan(text: strumento, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: coloreTitolo)),
+                      TextSpan(text: strumento, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: coloreStrumento)),
+                      if (autore.isNotEmpty && autore != 'N/D') ...[
+                        const TextSpan(text: ' - ', style: TextStyle(color: coloreDettagliSecondari)),
+                        TextSpan(text: autore, style: const TextStyle(fontWeight: FontWeight.normal, fontStyle: FontStyle.italic, color: coloreDettagliSecondari)),
+                      ],
                       if (numPag.isNotEmpty && numPag != 'N/D') ...[
                         const TextSpan(text: ' a Pag: ', style: TextStyle(fontWeight: FontWeight.w500, color: coloreDettagliSecondari)),
                         TextSpan(text: numPag, style: const TextStyle(fontWeight: FontWeight.normal, color: coloreDettagliPrimari)),

@@ -1,8 +1,5 @@
 ﻿import 'package:flutter/material.dart';
-import 'package:sqflite/sqflite.dart';
-// import 'package:data_table_2/data_table_2.dart'; // RIMOSSO
-
-import 'package:jamsetgemini/main.dart'; // Import corretto
+import 'package:jamsetgemini/main.dart'; // Importa databaseService
 
 class ListaSpartitiCatalogoScreen extends StatefulWidget {
   final int catalogoId;
@@ -31,16 +28,14 @@ class _ListaSpartitiCatalogoScreenState extends State<ListaSpartitiCatalogoScree
     _loadSpartiti();
   }
 
-  // Logica adattata per Jamset
   Future<void> _loadSpartiti() async {
     print('--- Caricamento spartiti per: ${widget.dbName} ---');
     try {
-      // Il DB Ã¨ giÃ  aperto e disponibile in dbCatalogoAttivo
-      if (dbCatalogoAttivo == null) {
-        throw Exception('Il database del catalogo attivo non Ã¨ disponibile.');
+      if (databaseService.dbCatalogoAttivo == null) {
+        throw Exception('Il database del catalogo attivo non è disponibile.');
       }
       
-      final data = await dbCatalogoAttivo!.query('spartiti', limit: 50);
+      final data = await databaseService.dbCatalogoAttivo!.query('spartiti', limit: 50);
       print('[OK] Trovati ${data.length} record.');
 
       if (mounted) {
@@ -91,14 +86,14 @@ class _ListaSpartitiCatalogoScreenState extends State<ListaSpartitiCatalogoScree
       }).toList());
     }).toList();
 
-    return DataTable(
-      columnSpacing: 12,
-      horizontalMargin: 12,
-     // minWidth: 1500,
-      columns: columns,
-      rows: rows,
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: DataTable(
+        columnSpacing: 12,
+        horizontalMargin: 12,
+        columns: columns,
+        rows: rows,
+      ),
     );
   }
 }
-
-

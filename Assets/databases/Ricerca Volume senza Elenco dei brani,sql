@@ -1,0 +1,12 @@
+SELECT volume,
+       titolo,
+       numpag,
+       numorig,
+       tipodocu,
+       *
+  FROM spartiti
+ WHERE volume LIKE :Cercavol 
+and tipodocu = "V"
+ ORDER BY volume,
+          tipodocu DESC,
+          numpag;

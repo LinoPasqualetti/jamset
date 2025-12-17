@@ -50,20 +50,9 @@ class _CsvViewerScreenState extends State<CsvViewerScreen>
   }
 
   Future<void> _loadGlobalConfig() async {
-    if (dbGlobale != null) {
-      try {
-        final configData = await dbGlobale!.query('DatiSistremaApp', columns: ['PercorsoPdf'], limit: 1);
-        if (mounted && configData.isNotEmpty) {
-          setState(() {
-            _percorsoPdfForAppBar = configData.first['PercorsoPdf'] as String? ?? 'Non impostato';
-          });
-        }
-      } catch (e) {
-        if (mounted) setState(() => _percorsoPdfForAppBar = 'Errore');
-      }
-    } else {
-      if (mounted) setState(() => _percorsoPdfForAppBar = 'DB non disp.');
-    }
+    // USARE L'ISTANZA databaseService
+    _percorsoPdfForAppBar = databaseService.percorsoPdf;
+    setState(() {});
   }
 
   @override
@@ -357,10 +346,10 @@ class _CsvViewerScreenState extends State<CsvViewerScreen>
   }
 
   Widget _buildCsvList() {
-    const Color coloreTitolo = Colors.black87;
     const Color coloreDettagliPrimari = Colors.teal;
     const Color coloreDettagliSecondari = Colors.black54;
-    final Color coloreVolume = Colors.red.shade800; // Colore per il volume
+    final Color coloreVolume = Colors.red.shade800;
+    final Color coloreStrumento = Colors.blue.shade900;
 
     return ListView.builder(
       itemCount: _filteredCsvData.length,
@@ -369,6 +358,7 @@ class _CsvViewerScreenState extends State<CsvViewerScreen>
 
         final titolo = _getCellValue(currentRow, 'Titolo');
         final strumento = _getCellValue(currentRow, 'strumento');
+        final autore = _getCellValue(currentRow, 'Autore', defaultValue: '');
         final volume = _getCellValue(currentRow, 'Volume');
         final numPag = _getCellValue(currentRow, 'NumPag');
         final provenienza = _getCellValue(currentRow, 'ArchivioProvenienza');
@@ -424,19 +414,22 @@ class _CsvViewerScreenState extends State<CsvViewerScreen>
                   TextSpan(
                     style: const TextStyle(fontSize: 12.0),
                     children: <TextSpan>[
-                      const TextSpan(text: 'Strumento: ', style: TextStyle(fontWeight: FontWeight.w500, color: coloreDettagliSecondari)),
-                      TextSpan(text: strumento, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: coloreTitolo)),
+                      TextSpan(text: strumento, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: coloreStrumento)),
+                      if (autore.isNotEmpty && autore != 'N/D') ...[
+                        const TextSpan(text: ' - ', style: TextStyle(color: coloreDettagliSecondari)),
+                        TextSpan(text: autore, style: const TextStyle(fontStyle: FontStyle.italic, color: coloreDettagliSecondari)),
+                      ],
                       if (numPag.isNotEmpty && numPag != 'N/D') ...[
                         const TextSpan(text: ' a Pag: ', style: TextStyle(fontWeight: FontWeight.w500, color: coloreDettagliSecondari)),
                         TextSpan(text: numPag, style: const TextStyle(fontWeight: FontWeight.normal, color: coloreDettagliPrimari)),
                       ],
                       if (volume.isNotEmpty && volume != 'N/D') ...[
                         const TextSpan(text: ' del Volume: ', style: TextStyle(fontWeight: FontWeight.w500, color: coloreDettagliSecondari)),
-                        TextSpan(text: volume, style: TextStyle(fontWeight: FontWeight.normal, color: coloreVolume)), // Colore volume modificato
+                        TextSpan(text: volume, style: TextStyle(fontWeight: FontWeight.normal, color: coloreVolume)),
                       ],
                       if (provenienza.isNotEmpty && provenienza != 'N/D') ...[
                         const TextSpan(text: ' Prov: ', style: TextStyle(fontWeight: FontWeight.w500, color: coloreDettagliSecondari)),
-                        TextSpan(text: provenienza, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: coloreTitolo)),
+                        TextSpan(text: provenienza, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.black87)),
                       ],
                       const TextSpan(text: ' Mat: ', style: TextStyle(fontWeight: FontWeight.w500, color: coloreDettagliSecondari)),
                       TextSpan(text: tipoMulti.isNotEmpty ? tipoMulti : "N/D", style: const TextStyle(fontWeight: FontWeight.normal, color: coloreDettagliPrimari)),

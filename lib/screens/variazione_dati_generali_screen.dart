@@ -6,7 +6,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:path/path.dart' as p;
-import 'package:sqflite/sqflite.dart'; // <-- IMPORT AGGIUNTO
+import 'package:sqflite/sqflite.dart';
 
 class VariazioneDatiGeneraliScreen extends StatefulWidget {
   const VariazioneDatiGeneraliScreen({super.key});
@@ -33,15 +33,15 @@ class _VariazioneDatiGeneraliScreenState extends State<VariazioneDatiGeneraliScr
 
   Future<void> _loadData() async {
     try {
-      if (dbGlobale == null) throw Exception('Database globale non inizializzato.');
+      if (databaseService.dbGlobale == null) throw Exception('Database globale non inizializzato.');
 
-      _dbPathForAppBar = dbGlobale!.path;
+      _dbPathForAppBar = databaseService.dbGlobale!.path;
 
-      final datiSistema = await dbGlobale!.query('DatiSistremaApp', limit: 1);
+      final datiSistema = await databaseService.dbGlobale!.query('DatiSistremaApp', limit: 1);
       if (datiSistema.isEmpty) throw Exception('Tabella DatiSistremaApp è vuota.');
       final dataRow = datiSistema.first;
 
-      _elencoCataloghi = await dbGlobale!.query('elenco_cataloghi');
+      _elencoCataloghi = await databaseService.dbGlobale!.query('elenco_cataloghi');
 
       dataRow.forEach((key, value) {
         _controllers[key] = TextEditingController(text: value?.toString() ?? '');
@@ -64,7 +64,7 @@ class _VariazioneDatiGeneraliScreenState extends State<VariazioneDatiGeneraliScr
   }
 
    Future<void> _saveData() async {
-    if (_formKey.currentState!.validate() && dbGlobale != null) {
+    if (_formKey.currentState!.validate() && databaseService.dbGlobale != null) {
       try {
         Map<String, dynamic> dataToSave = {};
         _controllers.forEach((key, controller) {
@@ -74,11 +74,16 @@ class _VariazioneDatiGeneraliScreenState extends State<VariazioneDatiGeneraliScr
         });
         dataToSave['id_catalogo_attivo'] = _selectedCatalogoId;
 
-        await dbGlobale!.update('DatiSistremaApp', dataToSave);
+        await databaseService.dbGlobale!.update('DatiSistremaApp', dataToSave, where: 'id = ?', whereArgs: [dataToSave['id']]);
+        
+        // --- RICARICA LA CONFIGURAZIONE --- 
+        await databaseService.reloadConfig();
+        gPercorsoPdf = databaseService.percorsoPdf; // Aggiorna la variabile globale
+        // ----------------------------------
 
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Dati salvati. Riavvia l\'app per rendere effettive le modifiche al catalogo.'), backgroundColor: Colors.green),
+            const SnackBar(content: Text('Dati aggiornati con successo!'), backgroundColor: Colors.green),
           );
           Navigator.of(context).pop();
         }
@@ -92,16 +97,15 @@ class _VariazioneDatiGeneraliScreenState extends State<VariazioneDatiGeneraliScr
     }
   }
 
-  // --- NUOVA LOGICA: ESPORTA DATABASE ---
   Future<void> _exportDatabase() async {
-    if (dbGlobale == null) return;
+    if (databaseService.dbGlobale == null) return;
     if (!await Permission.storage.request().isGranted) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Permesso di scrittura negato.')));
       return;
     }
     
     try {
-      final sourceFile = File(dbGlobale!.path);
+      final sourceFile = File(databaseService.dbGlobale!.path);
       final Directory? downloadsDir = await getDownloadsDirectory();
       if (downloadsDir == null) throw Exception("Impossibile trovare la cartella Download.");
       
@@ -116,18 +120,18 @@ class _VariazioneDatiGeneraliScreenState extends State<VariazioneDatiGeneraliScr
     }
   }
 
-  // --- NUOVA LOGICA: IMPORTA DATABASE ---
   Future<void> _importDatabase() async {
     FilePickerResult? result = await FilePicker.platform.pickFiles(type: FileType.custom, allowedExtensions: ['db']);
 
     if (result != null && result.files.single.path != null) {
       final sourcePath = result.files.single.path!;
-      final destinationPath = dbGlobale!.path;
+      final destinationPath = databaseService.dbGlobale!.path;
 
       try {
-        await dbGlobale?.close();
+        await databaseService.dbGlobale?.close();
         await File(sourcePath).copy(destinationPath);
-        dbGlobale = await openDatabase(destinationPath); // Riapri la connessione
+        // Ricarica la configurazione per riaprire i db
+        await databaseService.reloadConfig(); 
 
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Database importato! Ricarico i dati...'), backgroundColor: Colors.green),
@@ -223,7 +227,6 @@ class _VariazioneDatiGeneraliScreenState extends State<VariazioneDatiGeneraliScr
                   ),
                 );
               }).toList(),
-              // --- NUOVI PULSANTI ESPORTA/IMPORTA ---
               const Divider(height: 32),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,

@@ -1,11 +1,4 @@
-// lib/database/inizializza_i_db_della_app.dart - VERSIONE COMPLETA CORRETTA
-import 'dart:async';
-import 'dart:io';
-import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:path/path.dart' as p;
-import 'package:sqflite/sqflite.dart';// lib/database/inizializza_i_db_della_app.dart - VERSIONE CON SEQUENZA OTTIMALE
+// lib/database/inizializza_i_db_della_app.dart - VERSIONE CON SEQUENZA OTTIMALE
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
@@ -28,11 +21,11 @@ Completer<void>? _initializationCompleter;
 
 /// Ottiene il percorso PDF predefinito per la piattaforma corrente
 Future<String> _getDefaultSystemWidePath() async {
-  debugPrint('PERCORSO SYSTEM-WIDE per ${Platform.operatingSystem}');
+  debugPrint('PERCORSO SYSTEM-WIDE per \${Platform.operatingSystem}');
 
   final defaultPaths = {
     'android': '/storage/emulated/0/JamsetPDF/',
-    'windows': r'C:\JamsetPDF\',
+    'windows': r'C:\\JamsetPDF\\',
     'linux': '/var/lib/jamsetgemini/pdf/',
     'macos': '/Library/Application Support/JamsetPDF/',
   };
@@ -41,14 +34,14 @@ Future<String> _getDefaultSystemWidePath() async {
   final defaultPath = defaultPaths[os];
 
   if (defaultPath != null) {
-    debugPrint('  Percorso predefinito: $defaultPath');
+    debugPrint('  Percorso predefinito: \$defaultPath');
     return defaultPath;
   }
 
   if (Platform.isIOS) {
     final dir = await getApplicationDocumentsDirectory();
     final path = p.join(dir.path, 'JamsetPDF');
-    debugPrint('  iOS: Sandbox app → $path');
+    debugPrint('  iOS: Sandbox app → \$path');
     return path;
   }
 
@@ -61,7 +54,7 @@ Future<String> _getPlatformCorrectedPdfPath(String percorsoOriginale) async {
     return await _getDefaultSystemWidePath();
   }
 
-  final bool isWindowsPath = percorsoOriginale.contains(r'\') ||
+  final bool isWindowsPath = percorsoOriginale.contains(r'\\') ||
       percorsoOriginale.startsWith(RegExp(r'[A-Z]:\\'));
 
   if (Platform.isAndroid || Platform.isIOS) {
@@ -76,15 +69,15 @@ Future<String> _getPlatformCorrectedPdfPath(String percorsoOriginale) async {
     } catch (e) {}
     return await _getDefaultSystemWidePath();
   } else if (Platform.isWindows) {
-    // Su Windows: converte / in \
+    // Su Windows: converte / in \\
     if (!isWindowsPath && percorsoOriginale.contains('/')) {
-      return percorsoOriginale.replaceAll('/', r'\');
+      return percorsoOriginale.replaceAll('/', r'\\');
     }
     return percorsoOriginale;
   } else {
-    // Su Linux/macOS: converte \ in /
+    // Su Linux/macOS: converte \\ in /
     if (isWindowsPath) {
-      return percorsoOriginale.replaceAll(r'\', '/');
+      return percorsoOriginale.replaceAll(r'\\', '/');
     }
     return percorsoOriginale;
   }
@@ -185,7 +178,7 @@ Future<void> _creaIndiciFTS(Database db) async {
       debugPrint("     ✅ Tabella FTS creata con content (popolamento automatico)");
     } catch (e) {
       // Fallback: crea senza content (popolamento manuale)
-      debugPrint("     ⚠️ FTS con content fallito, creo senza: $e");
+      debugPrint("     ⚠️ FTS con content fallito, creo senza: \$e");
       await db.execute('''
         CREATE VIRTUAL TABLE spartiti_fts USING fts5(
           titolo,
@@ -200,8 +193,8 @@ Future<void> _creaIndiciFTS(Database db) async {
     debugPrint("🎯 Sistema FTS configurato: i trigger popoleranno automaticamente l'indice");
 
   } catch (e) {
-    debugPrint("❌ Errore configurazione FTS: $e");
-    throw Exception("Impossibile configurare FTS: $e");
+    debugPrint("❌ Errore configurazione FTS: \$e");
+    throw Exception("Impossibile configurare FTS: \$e");
   }
 }
 
@@ -222,7 +215,7 @@ Future<void> _eliminaFTSCompleto(Database db) async {
 
     debugPrint("✅ Sistema FTS eliminato (tabelle + trigger)");
   } catch (e) {
-    debugPrint("⚠️ Errore eliminazione FTS: $e");
+    debugPrint("⚠️ Errore eliminazione FTS: \$e");
   }
 }
 
@@ -246,7 +239,7 @@ Future<void> _verificaESincronizzaFTS(Database db) async {
       final totalSpartiti = countSpartiti.first['c'] as int? ?? 0;
 
       if (totalSpartiti > 0) {
-        debugPrint("🔄 Popolamento manuale FTS per $totalSpartiti record...");
+        debugPrint("🔄 Popolamento manuale FTS per \$totalSpartiti record...");
         await db.execute('''
           INSERT INTO spartiti_fts(rowid, titolo, autore, volume, ArchivioProvenienza)
           SELECT 
@@ -262,7 +255,7 @@ Future<void> _verificaESincronizzaFTS(Database db) async {
       return;
     }
 
-    debugPrint("✅ Trigger FTS trovati: ${triggerFTS.length}");
+    debugPrint("✅ Trigger FTS trovati: \${triggerFTS.length}");
 
     // 2. Conta record in spartiti
     final countSpartiti = await db.rawQuery("SELECT COUNT(*) as c FROM spartiti");
@@ -272,8 +265,8 @@ Future<void> _verificaESincronizzaFTS(Database db) async {
     final countFTS = await db.rawQuery("SELECT COUNT(*) as c FROM spartiti_fts");
     final totalFTS = countFTS.first['c'] as int? ?? 0;
 
-    debugPrint("   Record spartiti: $totalSpartiti");
-    debugPrint("   Record FTS: $totalFTS");
+    debugPrint("   Record spartiti: \$totalSpartiti");
+    debugPrint("   Record FTS: \$totalFTS");
 
     if (totalSpartiti == 0) {
       debugPrint("   ⚠️ Tabella spartiti vuota, FTS non necessario");
@@ -295,7 +288,7 @@ Future<void> _verificaESincronizzaFTS(Database db) async {
       debugPrint("     ✅ FTS popolato manualmente");
 
     } else if (totalFTS != totalSpartiti) {
-      debugPrint("   🔄 FTS non sincronizzato ($totalFTS/$totalSpartiti), risincronizzo...");
+      debugPrint("   🔄 FTS non sincronizzato (\$totalFTS/\$totalSpartiti), risincronizzo...");
       await _eliminaFTSCompleto(db);
       await _creaIndiciFTS(db);
 
@@ -326,7 +319,7 @@ Future<void> _verificaESincronizzaFTS(Database db) async {
 
       final diffCount = differenze.first['c'] as int? ?? 0;
       if (diffCount > 0) {
-        debugPrint("   ⚠️ $diffCount record non sincronizzati! Ricostruisco...");
+        debugPrint("   ⚠️ \$diffCount record non sincronizzati! Ricostruisco...");
         await _eliminaFTSCompleto(db);
         await _creaIndiciFTS(db);
 
@@ -350,7 +343,7 @@ Future<void> _verificaESincronizzaFTS(Database db) async {
     await _testFTSRapido(db);
 
   } catch (e) {
-    debugPrint("❌ Errore verifica FTS: $e");
+    debugPrint("❌ Errore verifica FTS: \$e");
     // Se c'è errore, ricostruisci completamente
     try {
       await _eliminaFTSCompleto(db);
@@ -374,7 +367,7 @@ Future<void> _verificaESincronizzaFTS(Database db) async {
 
       debugPrint("✅ FTS ricostruito dopo errore");
     } catch (e2) {
-      debugPrint("❌ Errore critico ricostruzione FTS: $e2");
+      debugPrint("❌ Errore critico ricostruzione FTS: \$e2");
     }
   }
 }
@@ -395,7 +388,7 @@ Future<void> _testFTSRapido(Database db) async {
         );
         final count = risultati.first['c'] as int? ?? 0;
         if (count > 0) {
-          debugPrint("   ✅ FTS funziona: '$parola' → $count risultati");
+          debugPrint("   ✅ FTS funziona: '\$parola' → \$count risultati");
           return;
         }
       } catch (e) {
@@ -406,7 +399,7 @@ Future<void> _testFTSRapido(Database db) async {
     debugPrint("   ⚠️ Nessun test positivo, verifica manualmente");
 
   } catch (e) {
-    debugPrint("   ❌ Test FTS fallito: $e");
+    debugPrint("   ❌ Test FTS fallito: \$e");
   }
 }
 
@@ -416,7 +409,7 @@ Future<int> _importaDatiDaAsset(Database db) async {
 
   try {
     // 1. Carica il DB master dagli assets
-    final ByteData data = await rootBundle.load('assets/databases/$_vecchioDbName');
+    final ByteData data = await rootBundle.load('assets/databases/\$_vecchioDbName');
     final tempAssetDbPath = p.join((await getTemporaryDirectory()).path, "vecchio_master_temp.db");
     await File(tempAssetDbPath).writeAsBytes(data.buffer.asUint8List(), flush: true);
 
@@ -429,20 +422,20 @@ Future<int> _importaDatiDaAsset(Database db) async {
 
       // 3. Determina tabella sorgente in base al SO
       final sourceTable = Platform.isWindows ? 'spartiti' : 'spartiti_andr';
-      debugPrint("   Tabella sorgente: '$sourceTable'");
+      debugPrint("   Tabella sorgente: '\$sourceTable'");
 
       // 4. Leggi i dati dalla tabella corretta
       List<Map<String, dynamic>> dataToInsert;
       try {
         dataToInsert = await masterDb.query(sourceTable);
       } catch (e) {
-        debugPrint("   ⚠️ Tabella '$sourceTable' non trovata, prova fallback...");
+        debugPrint("   ⚠️ Tabella '\$sourceTable' non trovata, prova fallback...");
         // Fallback all'altra tabella
         final fallbackTable = Platform.isWindows ? 'spartiti_andr' : 'spartiti';
         dataToInsert = await masterDb.query(fallbackTable);
       }
 
-      debugPrint("   Letti ${dataToInsert.length} record da asset");
+      debugPrint("   Letti \${dataToInsert.length} record da asset");
 
       if (dataToInsert.isEmpty) {
         debugPrint("   ⚠️ Nessun dato trovato nella tabella");
@@ -475,12 +468,12 @@ Future<int> _importaDatiDaAsset(Database db) async {
         // Progresso
         if (i % 500 == 0) {
           final progress = ((i / dataToInsert.length) * 100).toStringAsFixed(1);
-          debugPrint("   Progresso: $progress% ($recordImportati record)");
+          debugPrint("   Progresso: \$progress% (\$recordImportati record)");
           await Future.delayed(Duration.zero);
         }
       }
 
-      debugPrint("✅ Importati $recordImportati record da asset");
+      debugPrint("✅ Importati \$recordImportati record da asset");
       debugPrint("   ℹ️  I trigger hanno popolato automaticamente l'FTS");
 
       return recordImportati;
@@ -495,7 +488,7 @@ Future<int> _importaDatiDaAsset(Database db) async {
     }
 
   } catch (e) {
-    debugPrint("❌ Errore importazione dati: $e");
+    debugPrint("❌ Errore importazione dati: \$e");
     return 0;
   }
 }
@@ -525,430 +518,26 @@ Future<void> _creaDbGlobaleVuoto(Database db, int version) async {
     )
   ''');
 
-  debugPrint("✅ Struttura DBGlobale creata (v$version)");
+  debugPrint("✅ Struttura DBGlobale creata (v\$version)");
 }
 
 /// Inizializza DBGlobale con valori predefiniti
 Future<void> _inizializzaDbGlobale(Database db) async {
-  debugPrint("📝 Inizializzazione DBGlobale...");
+  final percorsoDefault = await _getDefaultSystemWidePath();
+  final dbPath = db.path.substring(0, db.path.lastIndexOf('/'));
+  
+  await db.insert('DatiSistremaApp', {
+    'SistemaOperativo': Platform.operatingSystem,
+    'PercorsoPdf': percorsoDefault,
+    'Percorsodatabase': dbPath,
+    'id_catalogo_attivo': 1,
+  });
 
-  // Verifica se DatiSistremaApp ha record
-  final datiEsistenti = await db.query('DatiSistremaApp', limit: 1);
-
-  if (datiEsistenti.isEmpty) {
-    // Inserisci dati predefiniti
-    final percorsoPdf = await _getDefaultSystemWidePath();
-
-    await db.insert('DatiSistremaApp', {
-      'SistemaOperativo': Platform.operatingSystem,
-      'PercorsoPdf': percorsoPdf,
-      'Percorsodatabase': gDatabasePath,
-      'id_catalogo_attivo': 1, // Sempre 1
-    });
-
-    await db.insert('elenco_cataloghi', {
-      'nome': 'Catalogo Principale',
-      'nome_file_db': _vecchioDbName,
-      'descrizione': 'Catalogo predefinito'
-    });
-
-    debugPrint("✅ DBGlobale inizializzato con valori predefiniti");
-    debugPrint("   Percorso PDF: $percorsoPdf");
-    debugPrint("   id_catalogo_attivo: 1");
-  } else {
-    // Aggiorna percorso PDF se necessario
-    final percorsoDalDB = datiEsistenti.first['PercorsoPdf'] as String? ?? '';
-    final percorsoCorretto = await _getPlatformCorrectedPdfPath(percorsoDalDB);
-
-    if (percorsoCorretto != percorsoDalDB) {
-      await db.update('DatiSistremaApp', {
-        'PercorsoPdf': percorsoCorretto,
-        'SistemaOperativo': Platform.operatingSystem
-      });
-      debugPrint("🔄 Percorso PDF corretto: $percorsoDalDB → $percorsoCorretto");
-    }
-
-    // Assicura che id_catalogo_attivo sia 1
-    final idCatalogo = datiEsistenti.first['id_catalogo_attivo'] as int? ?? 1;
-    if (idCatalogo != 1) {
-      await db.update('DatiSistremaApp', {'id_catalogo_attivo': 1});
-      debugPrint("🔄 id_catalogo_attivo corretto a 1");
-    }
-  }
+  await db.insert('elenco_cataloghi', {
+    'nome': 'Catalogo Principale',
+    'nome_file_db': _vecchioDbName,
+    'descrizione': 'Catalogo predefinito importato da asset'
+  });
+  
+  debugPrint("✅ DBGlobale inizializzato con valori di default");
 }
-
-/// ===================================================================
-/// 4. FUNZIONE PRINCIPALE DI INIZIALIZZAZIONE - SEQUENZA OTTIMALE
-/// ===================================================================
-Future<void> inizializzaIDbDellaApp() async {
-  if (_isInitializing) {
-    debugPrint("⚠️ Inizializzazione già in corso, attendo...");
-    await _initializationCompleter?.future;
-    return;
-  }
-
-  _isInitializing = true;
-  _initializationCompleter = Completer<void>();
-
-  try {
-    debugPrint("\n" + "="*60);
-    debugPrint("🚀 INIZIALIZZAZIONE JAMSETGEMINI - SEQUENZA OTTIMALE");
-    debugPrint("Piattaforma: ${Platform.operatingSystem}");
-    debugPrint("Data: ${DateTime.now()}");
-    debugPrint("="*60);
-
-    // 1. Ottieni directory support
-    final supportDir = await getApplicationSupportDirectory();
-    gDatabasePath = supportDir.path;
-    debugPrint("📁 Directory support: $gDatabasePath");
-
-    // 2. GESTIONE VECCHIODB.DB - CON SEQUENZA OTTIMALE
-    debugPrint("\n🎵 Database principale: $_vecchioDbName");
-    final vecchioDbPath = p.join(gDatabasePath, _vecchioDbName);
-
-    if (!await databaseExists(vecchioDbPath)) {
-      // ============ NUOVO DATABASE: SEQUENZA OTTIMALE ============
-      debugPrint("📋 Crea nuovo database (sequenza ottimale)...");
-      dbVecchio = await openDatabase(
-          vecchioDbPath,
-          version: 1,
-          onCreate: (Database db, int version) async {
-            // 1. PRIMA: Crea tabella spartiti (struttura)
-            await _creaTabellaSpartiti(db);
-          }
-      );
-
-      // ============ SEQUENZA OTTIMALE COMPLETA ============
-      debugPrint("\n🔧 APPLICAZIONE SEQUENZA OTTIMALE:");
-      debugPrint("  1. ✅ Tabella spartiti creata");
-
-      // 2. POI: Crea trigger + FTS (PRIMA di importare dati)
-      debugPrint("  2. 🔧 Configurazione sistema FTS...");
-      await _creaIndiciFTS(dbVecchio!);
-      debugPrint("     ✅ Trigger FTS creati");
-      debugPrint("     ✅ Tabella FTS vuota creata");
-
-      // 3. INFINE: Importa dati → trigger popolano automaticamente FTS!
-      debugPrint("  3. 📥 Importazione dati (trigger attivi)...");
-      final recordImportati = await _importaDatiDaAsset(dbVecchio!);
-
-      if (recordImportati > 0) {
-        debugPrint("     ✅ $recordImportati record importati");
-
-        // Verifica che i trigger abbiano funzionato
-        final countFTS = await dbVecchio!.rawQuery("SELECT COUNT(*) as c FROM spartiti_fts");
-        final totalFTS = countFTS.first['c'] as int? ?? 0;
-
-        if (totalFTS == recordImportati) {
-          debugPrint("     🎯 FTS popolato automaticamente dai trigger: $totalFTS record");
-        } else {
-          debugPrint("     ⚠️ Trigger parziali: FTS ha $totalFTS/$recordImportati record");
-          // Fallback: popola manualmente se i trigger non hanno funzionato
-          if (totalFTS == 0) {
-            debugPrint("     🔄 Popolamento manuale FTS...");
-            await dbVecchio!.execute('''
-              INSERT INTO spartiti_fts(rowid, titolo, autore, volume, ArchivioProvenienza)
-              SELECT 
-                id_univoco_globale,
-                COALESCE(titolo, ''),
-                COALESCE(autore, ''),
-                COALESCE(volume, ''),
-                COALESCE(ArchivioProvenienza, '')
-              FROM spartiti
-            ''');
-            debugPrint("     ✅ FTS popolato manualmente");
-          }
-        }
-      } else {
-        debugPrint("     ⚠️ Nessun dato importato");
-      }
-
-    } else {
-      // ============ DATABASE ESISTENTE ============
-      debugPrint("📁 Database esistente trovato...");
-      dbVecchio = await openDatabase(vecchioDbPath);
-
-
-      // Verifica se tabella spartiti esiste
-      final tabelle = await dbVecchio!.rawQuery(
-          "SELECT name FROM sqlite_master WHERE type='table' AND name='spartiti'"
-      );
-
-      if (tabelle.isEmpty) {
-        debugPrint("⚠️ Tabella spartiti non trovata, applico sequenza ottimale...");
-        // Database esiste ma non ha tabella spartiti? Strano, ma ricreiamo
-        await _creaTabellaSpartiti(dbVecchio!);
-        await _creaIndiciFTS(dbVecchio!);
-        final recordImportati = await _importaDatiDaAsset(dbVecchio!);
-        debugPrint("✅ Database riparato: $recordImportati record importati");
-      } else {
-        // Database esiste e ha struttura: verifica e sincronizza FTS
-        debugPrint("✅ Tabella spartiti presente");
-        await _verificaESincronizzaFTS(dbVecchio!);
-      }
-    }
-
-    debugPrint("✅ Database principale pronto e sincronizzato");
-
-    // 3. GESTIONE DB GLOBALE
-    debugPrint("\n🌍 Database globale: $_dbGlobaleName");
-    final dbGlobalePath = p.join(gDatabasePath, _dbGlobaleName);
-
-    if (!await databaseExists(dbGlobalePath)) {
-      // Copia da asset se esiste
-      try {
-        debugPrint("📋 Copia DBGlobale da asset...");
-        final ByteData data = await rootBundle.load('assets/databases/$_dbGlobaleName');
-        await File(dbGlobalePath).writeAsBytes(data.buffer.asUint8List(), flush: true);
-        debugPrint("✅ DBGlobale copiato da asset");
-      } catch (e) {
-        // Crea vuoto se non esiste in asset
-        debugPrint("⚠️ DBGlobale non in asset, creo vuoto...");
-        dbGlobale = await openDatabase(
-            dbGlobalePath,
-            version: 1,
-            onCreate: _creaDbGlobaleVuoto
-        );
-      }
-    }
-
-    if (dbGlobale == null) {
-      dbGlobale = await openDatabase(dbGlobalePath);
-    }
-
-    // Inizializza DBGlobale
-    await _inizializzaDbGlobale(dbGlobale!);
-
-    // Leggi configurazione
-    final datiSistema = await dbGlobale!.query('DatiSistremaApp', limit: 1);
-    if (datiSistema.isNotEmpty) {
-      gPercorsoPdf = datiSistema.first['PercorsoPdf'] as String? ?? '';
-      final idCatalogoAttivo = datiSistema.first['id_catalogo_attivo'] as int? ?? 1;
-
-      // Leggi catalogo attivo
-      final catalogoInfo = await dbGlobale!.query(
-          'elenco_cataloghi',
-          where: 'id = ?',
-          whereArgs: [idCatalogoAttivo],
-          limit: 1
-      );
-
-      if (catalogoInfo.isNotEmpty) {
-        gActiveCatalogDbName = catalogoInfo.first['nome_file_db'] as String;
-      } else {
-        gActiveCatalogDbName = _vecchioDbName;
-        debugPrint("⚠️ Catalogo non trovato, uso database principale");
-      }
-    }
-
-    debugPrint("🎯 Percorso PDF: $gPercorsoPdf");
-    debugPrint("🎯 Catalogo attivo: $gActiveCatalogDbName");
-
-    // 4. CATALOGO ATTIVO
-    final catalogoPath = p.join(gDatabasePath, gActiveCatalogDbName);
-
-    if (gActiveCatalogDbName != _vecchioDbName && !await databaseExists(catalogoPath)) {
-      debugPrint("📂 Catalogo attivo non trovato, uso database principale");
-      gActiveCatalogDbName = _vecchioDbName;
-    }
-
-    if (gActiveCatalogDbName == _vecchioDbName) {
-      dbCatalogoAttivo = dbVecchio;
-    } else {
-      dbCatalogoAttivo = await openDatabase(catalogoPath);
-    }
-
-    // 5. CREA DIRECTORY PDF SE NON ESISTE
-    try {
-      final pdfDir = Directory(gPercorsoPdf);
-      if (!await pdfDir.exists()) {
-        await pdfDir.create(recursive: true);
-        debugPrint("📁 Directory PDF creata: $gPercorsoPdf");
-      } else {
-        debugPrint("📁 Directory PDF già esistente: $gPercorsoPdf");
-      }
-    } catch (e) {
-      debugPrint("⚠️ Impossibile creare directory PDF: $e");
-    }
-
-    debugPrint("\n" + "="*60);
-    debugPrint("✅ INIZIALIZZAZIONE COMPLETATA CON SUCCESSO");
-    debugPrint("   Piattaforma: ${Platform.operatingSystem}");
-    debugPrint("   Percorso PDF: $gPercorsoPdf");
-    debugPrint("   Catalogo: $gActiveCatalogDbName");
-    debugPrint("   FTS: Configurato con sequenza ottimale");
-    debugPrint("="*60);
-
-    _initializationCompleter?.complete();
-
-  } catch (e, s) {
-    debugPrint("\n❌ ERRORE INIZIALIZZAZIONE:");
-    debugPrint("$e");
-    debugPrint("$s");
-    _initializationCompleter?.completeError(e);
-    rethrow;
-  } finally {
-    _isInitializing = false;
-  }
-}
-
-/// ===================================================================
-/// 5. FUNZIONI DI RICERCA (CORRETTE per struttura reale)
-/// ===================================================================
-
-/// Ricerca FTS corretta
-Future<List<Map<String, dynamic>>> cercaSpartitiFTS(String query, {String? strumento}) async {
-  if (dbVecchio == null) return [];
-
-  try {
-    String ftsQuery = query.trim();
-    if (ftsQuery.isEmpty) {
-      return await cercaSpartitiSemplice('', strumento: strumento);
-    }
-
-    // QUERY CORRETTA
-    var sql = '''
-      SELECT DISTINCT 
-        NumPag, 
-        titolo, 
-        volume, 
-        ArchivioProvenienza,
-        strumento,
-        autore,
-        PrimoLInk,
-        PercResto,
-        TipoMulti,
-        id_univoco_globale
-      FROM spartiti
-      WHERE id_univoco_globale IN (
-        SELECT rowid FROM spartiti_fts 
-        WHERE spartiti_fts MATCH ?
-      )
-    ''';
-
-    var params = [ftsQuery];
-
-    if (strumento != null && strumento.isNotEmpty) {
-      sql += ' AND strumento = ?';
-      params.add(strumento);
-    }
-
-    sql += ' ORDER BY titolo COLLATE NOCASE ASC LIMIT 100';
-
-    final risultati = await dbVecchio!.rawQuery(sql, params);
-    debugPrint("🔍 Ricerca FTS: '$query' → ${risultati.length} risultati");
-    return risultati;
-
-  } catch (e) {
-    debugPrint("❌ Errore ricerca FTS: $e");
-    return await cercaSpartitiSemplice(query, strumento: strumento);
-  }
-}
-
-/// Ricerca alternativa (fallback)
-Future<List<Map<String, dynamic>>> cercaSpartitiSemplice(String query, {String? strumento}) async {
-  if (dbVecchio == null) return [];
-
-  try {
-    var sql = '''
-      SELECT DISTINCT 
-        NumPag,
-        titolo,
-        volume,
-        ArchivioProvenienza,
-        strumento,
-        autore,
-        PrimoLInk,
-        PercResto,
-        TipoMulti,
-        id_univoco_globale
-      FROM spartiti
-      WHERE (titolo LIKE ? OR autore LIKE ? OR volume LIKE ?)
-    ''';
-
-    var params = ['%$query%', '%$query%', '%$query%'];
-
-    if (strumento != null && strumento.isNotEmpty) {
-      sql += ' AND strumento = ?';
-      params.add(strumento);
-    }
-
-    sql += ' ORDER BY titolo COLLATE NOCASE ASC LIMIT 100';
-
-    final risultati = await dbVecchio!.rawQuery(sql, params);
-    debugPrint("🔍 Ricerca semplice: '$query' → ${risultati.length} risultati");
-    return risultati;
-
-  } catch (e) {
-    debugPrint("❌ Errore ricerca semplice: $e");
-    return [];
-  }
-}
-
-/// Funzione per rigenerare FTS manualmente
-Future<bool> rigeneraFTSManualmente() async {
-  if (dbVecchio == null) return false;
-
-  try {
-    debugPrint("🔄 Rigenerazione manuale FTS (sequenza ottimale)...");
-    await _creaIndiciFTS(dbVecchio!);
-
-    // Popola manualmente dopo ricreazione
-    await dbVecchio!.execute('''
-      INSERT INTO spartiti_fts(rowid, titolo, autore, volume, ArchivioProvenienza)
-      SELECT 
-        id_univoco_globale,
-        COALESCE(titolo, ''),
-        COALESCE(autore, ''),
-        COALESCE(volume, ''),
-        COALESCE(ArchivioProvenienza, '')
-      FROM spartiti
-    ''');
-
-    debugPrint("✅ FTS rigenerato con successo");
-    return true;
-  } catch (e) {
-    debugPrint("❌ Errore rigenerazione FTS: $e");
-    return false;
-  }
-}
-
-/// Diagnostica database
-Future<Map<String, dynamic>> diagnosticaDatabase() async {
-  final risultato = <String, dynamic>{
-    'piattaforma': Platform.operatingSystem,
-    'percorso_pdf': gPercorsoPdf,
-    'database_path': gDatabasePath,
-    'catalogo_attivo': gActiveCatalogDbName,
-  };
-
-  if (dbVecchio != null) {
-    try {
-      // Conta record spartiti
-      final countSpartiti = await dbVecchio!.rawQuery("SELECT COUNT(*) as c FROM spartiti");
-      risultato['record_spartiti'] = countSpartiti.first['c'];
-
-      // Conta record FTS
-      final countFTS = await dbVecchio!.rawQuery("SELECT COUNT(*) as c FROM spartiti_fts");
-      risultato['record_fts'] = countFTS.first['c'];
-
-      // Test FTS
-      final testFTS = await dbVecchio!.rawQuery(
-          "SELECT COUNT(*) as c FROM spartiti_fts WHERE spartiti_fts MATCH 'jazz'"
-      );
-      risultato['test_fts_jazz'] = testFTS.first['c'];
-
-      // Verifica trigger
-      final trigger = await dbVecchio!.rawQuery(
-          "SELECT name FROM sqlite_master WHERE type='trigger' AND name LIKE '%fts%'"
-      );
-      risultato['trigger_fts'] = trigger.length;
-
-    } catch (e) {
-      risultato['errore_diagnostica'] = e.toString();
-    }
-  }
-
-  return risultato;
-}
-

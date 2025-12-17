@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:sqflite/sqflite.dart';
-
-import 'package:jamsetgemini/main.dart'; // <-- IMPORT CORRETTO
+import 'package:jamsetgemini/main.dart'; // Importa databaseService
 import 'VariaCatalogo.dart';
 
 class GestisciElencoCataloghi extends StatefulWidget {
@@ -22,13 +20,15 @@ class _GestisciElencoCataloghiState extends State<GestisciElencoCataloghi> {
     _loadCataloghi();
   }
 
-  // LOGICA ADATTATA PER USARE IL DB GLOBALE
   Future<void> _loadCataloghi() async {
     try {
-      if (dbGlobale == null) {
+      // Sincronizza prima di caricare per avere la lista più aggiornata
+      await databaseService.synchronizeCatalogs();
+      
+      if (databaseService.dbGlobale == null) {
         throw Exception('Il database globale non è stato inizializzato.');
       }
-      final data = await dbGlobale!.query('elenco_cataloghi', orderBy: 'nome_catalogo');
+      final data = await databaseService.dbGlobale!.query('elenco_cataloghi', orderBy: 'nome_catalogo');
 
       if (mounted) {
         setState(() {
@@ -57,7 +57,7 @@ class _GestisciElencoCataloghiState extends State<GestisciElencoCataloghi> {
     );
 
     if (result == true) {
-      _loadCataloghi();
+      _loadCataloghi(); // Ricarica la lista dopo una modifica
     }
   }
 
@@ -67,6 +67,11 @@ class _GestisciElencoCataloghiState extends State<GestisciElencoCataloghi> {
       appBar: AppBar(
         title: const Text('Gestione Elenco Cataloghi'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: _loadCataloghi,
+            tooltip: 'Ricarica Lista',
+          ),
           IconButton(
             icon: const Icon(Icons.add),
             onPressed: () => _navigateToVariaScreen(),
