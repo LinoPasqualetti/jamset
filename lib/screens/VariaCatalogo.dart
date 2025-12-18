@@ -1,8 +1,8 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:file_picker/file_picker.dart';
-import 'package:path/path.dart' as p;
 import 'package:sqflite/sqflite.dart';
+import 'package:path/path.dart' as path;
 
 import 'package:jamsetgemini/main.dart';
 import 'package:jamsetgemini/screens/lista_spartiti_catalogo.dart';
@@ -21,19 +21,21 @@ class _VariaCatalogoScreenState extends State<VariaCatalogoScreen> {
   final _formKey = GlobalKey<FormState>();
   late final Map<String, TextEditingController> _controllers;
   bool _isNewRecord = true;
+  bool _isActive = false;
+  bool _isSaving = false;
+  bool _isPopulating = false; // Stato per l'importazione dati
 
   @override
   void initState() {
     super.initState();
     _isNewRecord = widget.initialData == null;
-    
+
     _controllers = {
       'id': TextEditingController(),
       'nome_catalogo': TextEditingController(),
-      'descrizione': TextEditingController(), 
+      'descrizione': TextEditingController(),
       'nome_file_db': TextEditingController(),
-      'FilesPath': TextEditingController(),
-      'AppPath': TextEditingController(),
+      'FilesPath': TextEditingController(text: gPercorsoPdf), 
       'data_creazione': TextEditingController(),
       'data_ultimo_aggiornamento': TextEditingController(),
       'conteggio_brani': TextEditingController(),
@@ -41,11 +43,15 @@ class _VariaCatalogoScreenState extends State<VariaCatalogoScreen> {
 
     if (!_isNewRecord) {
       widget.initialData!.forEach((key, value) {
-        _controllers[key]?.text = value?.toString() ?? '';
+        if (_controllers.containsKey(key)) {
+          _controllers[key]?.text = value?.toString() ?? '';
+        }
       });
+      _checkIfActive();
     } else {
-       _controllers['data_creazione']?.text = DateTime.now().toIso8601String();
-       _controllers['conteggio_brani']?.text = '0';
+      _controllers['data_creazione']?.text = DateTime.now().toIso8601String();
+      _controllers['conteggio_brani']?.text = '0';
+      _controllers['nome_file_db']?.text = 'nuovo_catalogo.db';
     }
   }
 
@@ -55,133 +61,129 @@ class _VariaCatalogoScreenState extends State<VariaCatalogoScreen> {
     super.dispose();
   }
 
-  Future<void> _saveData() async {
-    if (!_formKey.currentState!.validate() || databaseService.dbGlobale == null) return;
-
+  Future<void> _checkIfActive() async {
+    if (databaseService.dbGlobale == null) return;
     try {
-      final db = databaseService.dbGlobale!;
-      
-      Map<String, dynamic> dataToSave = {};
-      _controllers.forEach((key, controller) => dataToSave[key] = controller.text);
-      dataToSave['data_ultimo_aggiornamento'] = DateTime.now().toIso8601String();
-
-      if (_isNewRecord) {
-        dataToSave.remove('id');
-        await db.insert('elenco_cataloghi', dataToSave, conflictAlgorithm: ConflictAlgorithm.replace);
-      } else {
-        await db.update('elenco_cataloghi', dataToSave, where: 'id = ?', whereArgs: [dataToSave['id']]);
-      }
-      
-      await databaseService.synchronizeCatalogs();
-
-      if(mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Dati salvati con successo!'), backgroundColor: Colors.green));
-        Navigator.of(context).pop(true);
+      final activeCatalog = await databaseService.dbGlobale!.query('DatiSistremaApp', columns: ['id_catalogo_attivo'], limit: 1);
+      if (activeCatalog.isNotEmpty) {
+        final activeId = activeCatalog.first['id_catalogo_attivo'] as int? ?? 0;
+        final currentId = int.tryParse(_controllers['id']!.text) ?? 0;
+        if (mounted) setState(() => _isActive = (activeId == currentId));
       }
     } catch (e) {
-       if(mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Errore: $e')));
+      debugPrint('Errore nel controllo catalogo attivo: $e');
     }
   }
 
-  Future<void> _deleteData() async {
-    if (_isNewRecord || widget.initialData == null || databaseService.dbGlobale == null) return;
+  Future<void> _popolaDaMaster() async {
+    final dbName = _controllers['nome_file_db']!.text;
+    if (dbName.isEmpty) return;
 
-    final id = widget.initialData!['id'];
-    if (id == 1) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('ERRORE: Il catalogo di default (ID 1) non può essere eliminato.'), backgroundColor: Colors.red));
-      return;
+    setState(() => _isPopulating = true);
+    try {
+      debugPrint("🚀 Avvio popolamento catalogo $dbName da master...");
+      final count = await databaseService.populateCatalogFromMaster(dbName);
+      
+      if (mounted) {
+        setState(() {
+          _controllers['conteggio_brani']!.text = count.toString();
+          _isPopulating = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Importazione completata! $count brani aggiunti.'), backgroundColor: Colors.teal)
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isPopulating = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Errore durante il popolamento: $e'), backgroundColor: Colors.red)
+        );
+      }
     }
-    if (widget.totalCataloghi <= 1) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('ERRORE: Non puoi eliminare l\'ultimo catalogo rimasto.'), backgroundColor: Colors.red));
-      return;
-    }
+  }
 
+  Future<void> _activateCatalog() async {
+    if (databaseService.dbGlobale == null) return;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Conferma Eliminazione'),
-        content: Text('Sei sicuro di voler eliminare il catalogo "${widget.initialData!['nome_catalogo']}"? L\'operazione è irreversibile.'),
+        title: const Text('Attiva Catalogo'),
+        content: Text('Vuoi attivare il catalogo "${_controllers['nome_catalogo']!.text}"?'),
         actions: [
           TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Annulla')),
-          TextButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('Elimina', style: TextStyle(color: Colors.red))),
+          TextButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('Attiva', style: TextStyle(color: Colors.green))),
         ],
       ),
     ) ?? false;
 
-    if (confirmed) {
-      try {
-        final db = databaseService.dbGlobale!;
-        await db.delete('elenco_cataloghi', where: 'id = ?', whereArgs: [id]);
+    if (!confirmed) return;
+    setState(() => _isSaving = true);
 
-        await databaseService.synchronizeCatalogs();
+    try {
+      await databaseService.dbGlobale!.update(
+          'DatiSistremaApp', 
+          {'id_catalogo_attivo': int.parse(_controllers['id']!.text)},
+          where: 'id = ?',
+          whereArgs: [1]
+      );
 
-        if(mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Catalogo eliminato.'), backgroundColor: Colors.orange));
-            Navigator.of(context).pop(true);
-        }
-      } catch (e) {
-          if(mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Errore: $e')));
+      await databaseService.reloadConfig();
+      gActiveCatalogDbName = databaseService.activeCatalogDbName;
+
+      if (mounted) {
+        setState(() => _isActive = true);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Catalogo attivato!'), backgroundColor: Colors.green));
       }
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Errore: $e'), backgroundColor: Colors.red));
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
     }
   }
 
-  Future<void> _pickFolder(String controllerKey) async {
-    String? selectedDirectory = await FilePicker.platform.getDirectoryPath();
-    if (selectedDirectory != null) {
-      setState(() {
-        _controllers[controllerKey]?.text = selectedDirectory;
-      });
+  Future<void> _saveData() async {
+    if (!_formKey.currentState!.validate() || databaseService.dbGlobale == null) return;
+    setState(() => _isSaving = true);
+
+    try {
+      final db = databaseService.dbGlobale!;
+      String fileName = _controllers['nome_file_db']!.text.trim();
+      if (!fileName.endsWith('.db')) fileName = '$fileName.db';
+
+      Map<String, dynamic> dataToSave = {
+        'nome_catalogo': _controllers['nome_catalogo']!.text,
+        'nome_file_db': fileName,
+        'descrizione': _controllers['descrizione']!.text,
+        'data_ultimo_aggiornamento': DateTime.now().toIso8601String(),
+      };
+
+      if (_isNewRecord) {
+        dataToSave['data_creazione'] = _controllers['data_creazione']!.text;
+        dataToSave['conteggio_brani'] = 0;
+        final newId = await db.insert('elenco_cataloghi', dataToSave);
+        await databaseService.createCatalogoDatabase(fileName);
+        
+        if (widget.totalCataloghi == 0) {
+          await db.update('DatiSistremaApp', {'id_catalogo_attivo': newId}, where: 'id = 1');
+          await databaseService.reloadConfig();
+          gActiveCatalogDbName = databaseService.activeCatalogDbName;
+        }
+      } else {
+        await db.update('elenco_cataloghi', dataToSave, where: 'id = ?', whereArgs: [_controllers['id']!.text]);
+      }
+
+      await databaseService.synchronizeCatalogs();
+
+      if(mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Dati salvati!'), backgroundColor: Colors.green));
+        Navigator.of(context).pop(true);
+      }
+    } catch (e) {
+      if(mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Errore: $e'), backgroundColor: Colors.red));
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
     }
-  }
-
-  Future<void> _verificaEApriCatalogo() async {
-    if(widget.initialData == null) return;
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => ListaSpartitiCatalogoScreen(
-          catalogoId: widget.initialData!['id'] as int,
-          nomeCatalogo: widget.initialData!['nome_catalogo'] as String,
-          dbName: widget.initialData!['nome_file_db'] as String,
-        ),
-      ),
-    );
-  }
-
-  void _showDbInfo() {
-    final dbName = _isNewRecord ? '(nuovo catalogo)' : _controllers['nome_file_db']?.text ?? 'N/D';
-    final fullPath = p.join(gDatabasePath, dbName);
-
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Informazioni Database'),
-        content: SingleChildScrollView(
-          child: ListBody(
-            children: <Widget>[
-              const Text('Nome file database del catalogo:'),
-              SelectableText(dbName, style: const TextStyle(fontWeight: FontWeight.bold)),
-              const SizedBox(height: 16),
-              const Text('Percorso completo della cartella dei DB:'),
-              SelectableText(gDatabasePath, style: const TextStyle(fontFamily: 'monospace', fontSize: 12)),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            child: const Text('Copia Percorso'),
-            onPressed: () {
-              Clipboard.setData(ClipboardData(text: gDatabasePath));
-              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Percorso cartella copiato!')));
-            },
-          ),
-          TextButton(
-            child: const Text('Chiudi'),
-            onPressed: () => Navigator.of(context).pop(),
-          ),
-        ],
-      ),
-    );
   }
 
   @override
@@ -190,17 +192,8 @@ class _VariaCatalogoScreenState extends State<VariaCatalogoScreen> {
       appBar: AppBar(
         title: Text(_isNewRecord ? 'Nuovo Catalogo' : 'Varia Catalogo'),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.info_outline),
-            onPressed: _showDbInfo,
-            tooltip: 'Info Database',
-          ),
-          if (!_isNewRecord)
-            IconButton(
-              icon: const Icon(Icons.delete, color: Colors.red),
-              onPressed: _deleteData,
-              tooltip: 'Elimina Catalogo',
-            )
+          if (!_isNewRecord && !_isActive)
+            IconButton(icon: const Icon(Icons.check_circle_outline, color: Colors.green), onPressed: _activateCatalog, tooltip: 'Attiva'),
         ],
       ),
       body: SingleChildScrollView(
@@ -208,43 +201,62 @@ class _VariaCatalogoScreenState extends State<VariaCatalogoScreen> {
         child: Form(
           key: _formKey,
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               ..._controllers.entries.map((entry) {
                 final key = entry.key;
-                final controller = entry.value;
-                bool isReadOnly = ['id', 'data_creazione', 'data_ultimo_aggiornamento', 'conteggio_brani'].contains(key);
-
+                bool isReadOnly = ['id', 'data_creazione', 'data_ultimo_aggiornamento', 'conteggio_brani', 'FilesPath'].contains(key);
                 return Padding(
                   padding: const EdgeInsets.only(bottom: 16.0),
                   child: TextFormField(
-                    controller: controller,
+                    controller: entry.value,
                     readOnly: isReadOnly,
-                    maxLines: key == 'descrizione' ? 3 : 1,
                     decoration: InputDecoration(
-                      labelText: key,
+                      labelText: key.toUpperCase(), 
                       border: const OutlineInputBorder(),
-                      filled: isReadOnly,
-                      fillColor: isReadOnly ? Colors.grey[200] : null,
-                      suffixIcon: (key == 'FilesPath' || key == 'AppPath') ? IconButton(icon: const Icon(Icons.folder_open), onPressed: () => _pickFolder(key)) : null,
                     ),
-                    validator: (value) {
-                      if (!isReadOnly && (value == null || value.isEmpty)) {
-                        return 'Questo campo non può essere vuoto';
-                      }
-                      return null;
-                    },
+                    validator: (v) => (!isReadOnly && (v == null || v.isEmpty)) ? 'Obbligatorio' : null,
                   ),
                 );
               }).toList(),
+              
               if (!_isNewRecord)
                 Padding(
-                  padding: const EdgeInsets.only(top: 16.0),
+                  padding: const EdgeInsets.symmetric(vertical: 8.0),
                   child: ElevatedButton.icon(
-                    onPressed: _verificaEApriCatalogo,
+                    onPressed: _isPopulating ? null : _popolaDaMaster,
+                    icon: _isPopulating ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.download),
+                    label: Text(_isPopulating ? 'IMPORTAZIONE IN CORSO...' : 'POPOLA DATI DA MASTER'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.orange.shade700, 
+                      foregroundColor: Colors.white,
+                      minimumSize: const Size(double.infinity, 50)
+                    ),
+                  ),
+                ),
+
+              if (!_isNewRecord)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8.0),
+                  child: ElevatedButton.icon(
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => ListaSpartitiCatalogoScreen(
+                            catalogoId: int.parse(_controllers['id']!.text),
+                            nomeCatalogo: _controllers['nome_catalogo']!.text,
+                            dbName: _controllers['nome_file_db']!.text,
+                          ),
+                        ),
+                      );
+                    },
                     icon: const Icon(Icons.playlist_play),
-                    label: const Text('Verifica e Apri Catalogo'),
-                    style: ElevatedButton.styleFrom(backgroundColor: Colors.teal, foregroundColor: Colors.white),
+                    label: const Text('VERIFICA E APRI CATALOGO'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.teal, 
+                      foregroundColor: Colors.white,
+                      minimumSize: const Size(double.infinity, 50)
+                    ),
                   ),
                 ),
             ],
@@ -252,7 +264,7 @@ class _VariaCatalogoScreenState extends State<VariaCatalogoScreen> {
         ),
       ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: _saveData,
+        onPressed: _isSaving ? null : _saveData,
         label: const Text('SALVA'),
         icon: const Icon(Icons.save),
       ),

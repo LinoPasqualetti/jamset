@@ -1,4 +1,4 @@
-// lib/main.dart - VERSIONE FINALE CON DATABASESERVICE
+// lib/main.dart - VERSIONE FINALE CON FILTRO LOG TASTIERA
 import 'package:flutter/material.dart';
 import 'package:jamsetgemini/screens/main_screen.dart';
 import 'dart:io';
@@ -37,7 +37,7 @@ DatabaseService databaseService = DatabaseService();
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // 1. Configura il logging (opzionale, ma utile)
+  // 1. Configura il logging avanzato con FILTRO TASTIERA
   _setupAdvancedLogging();
 
   // 2. Richiedi permessi (se su Android)
@@ -144,12 +144,38 @@ Future<void> _requestPermissions() async {
 }
 
 void _setupAdvancedLogging() {
+  // Filtro per inibire i display in console relativi all'uso della tastiera (glitch di debug su Windows)
+  final keyboardIgnoreKeywords = [
+    'HardwareKeyboard',
+    'KeyEvent',
+    'IME',
+    'softinput',
+    'SoftInput',
+    'ImeTracker',
+    'HardwareKeyboard._assertEventIsRegular'
+  ];
+
   if (kDebugMode) {
     debugPrint = (String? message, {int? wrapWidth}) {
-      if (message != null && message.isNotEmpty) {
+      if (message == null || message.isEmpty) return;
+
+      // Se il messaggio contiene una parola chiave della tastiera, lo ignoriamo
+      bool shouldIgnore = keyboardIgnoreKeywords.any((keyword) => message.contains(keyword));
+      
+      if (!shouldIgnore) {
         final timestamp = DateTime.now().toString().substring(11, 23);
         print("[$timestamp] $message");
       }
+    };
+
+    // Filtriamo anche le eccezioni di sistema per la tastiera
+    final originalOnError = FlutterError.onError;
+    FlutterError.onError = (FlutterErrorDetails details) {
+      if (details.exception.toString().contains('HardwareKeyboard')) {
+        // Silenziamo l'errore dell'asserzione tastiera che sporca la console
+        return;
+      }
+      originalOnError?.call(details);
     };
   }
 }
