@@ -1,12 +1,13 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
 
-class DatabaseService {
+class DatabaseService with ChangeNotifier {
   static DatabaseService? _instance;
   Database? _dbGlobale;
   Database? _dbCatalogoAttivo;
@@ -29,7 +30,7 @@ class DatabaseService {
 
   Future<void> initialize() async {
     final supportDir = await getApplicationSupportDirectory();
-    _databasePath = supportDir.path; // CORREZIONE: Usa direttamente la cartella di supporto
+    _databasePath = supportDir.path;
     await Directory(_databasePath).create(recursive: true);
     final path = p.join(_databasePath, _dbGlobaleName);
 
@@ -37,7 +38,6 @@ class DatabaseService {
       path,
       version: 1,
       onCreate: (db, version) async {
-        debugPrint("🔧 Creazione DB Globale da zero (onCreate)...");
         await _creaSchemaDbGlobale(db);
         await _popolaDatiGlobaliDefault(db);
       },
@@ -46,14 +46,13 @@ class DatabaseService {
       },
     );
 
+    await synchronizeCatalogs();
     await _loadConfigFromDb();
-    debugPrint("✅ Inizializzazione DatabaseService completata.");
   }
 
   Future<void> reloadConfig() async {
-    debugPrint("🔄 Ricaricamento configurazione dal database...");
     await _loadConfigFromDb();
-    debugPrint("✅ Ricaricamento completato.");
+    notifyListeners();
   }
 
   Future<void> _creaSchemaDbGlobale(Database db) async {
@@ -71,307 +70,543 @@ class DatabaseService {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         nome_catalogo TEXT,
         nome_file_db TEXT UNIQUE,
-        descrizione TEXT
+        descrizione TEXT,
+        data_creazione TEXT,
+        data_ultimo_aggiornamento TEXT,
+        conteggio_brani INTEGER DEFAULT 0
       )
     ''');
   }
 
   Future<void> _popolaDatiGlobaliDefault(Database db) async {
-    final percorsoDefault = await _getDefaultPdfPath();
     await db.insert('DatiSistremaApp', {
-      'SistemaOperativo': Platform.operatingSystem,
-      'PercorsoPdf': percorsoDefault,
+      'SistemaOperativo': Platform.isAndroid ? 'Android' : 'Windows',
+      'PercorsoPdf': '/storage/emulated/0/JamsetPDF/',
       'Percorsodatabase': _databasePath,
-      'id_catalogo_attivo': 1,
+      'id_catalogo_attivo': 1
     });
+
     await db.insert('elenco_cataloghi', {
-      'id': 1,
       'nome_catalogo': 'Catalogo Principale',
       'nome_file_db': _vecchioDbName,
-      'descrizione': 'Catalogo predefinito da importare'
-    }, conflictAlgorithm: ConflictAlgorithm.replace);
-    debugPrint("✅ DB Globale popolato con valori di sistema e catalogo di bootstrap.");
+      'descrizione': 'Database iniziale con spartiti di esempio',
+      'data_creazione': DateTime.now().toIso8601String(),
+      'data_ultimo_aggiornamento': DateTime.now().toIso8601String(),
+      'conteggio_brani': 0
+    });
   }
 
   Future<void> _verificaMigrazioneSchema(Database db) async {
     try {
-      final columns = await db.rawQuery('PRAGMA table_info(DatiSistremaApp)');
-      if (!columns.any((col) => col['name'] == 'PercorsoPdf')) {
+      final result = await db.rawQuery(
+          "PRAGMA table_info('DatiSistremaApp')"
+      );
+
+      final columns = result.map((e) => e['name'] as String).toList();
+
+      if (!columns.contains('PercorsoPdf')) {
         await db.execute('ALTER TABLE DatiSistremaApp ADD COLUMN PercorsoPdf TEXT');
       }
-      final catalogColumns = await db.rawQuery('PRAGMA table_info(elenco_cataloghi)');
-      if (!catalogColumns.any((col) => col['name'] == 'nome_catalogo')) {
-        await db.execute('ALTER TABLE elenco_cataloghi ADD COLUMN nome_catalogo TEXT');
+
+      if (!columns.contains('id_catalogo_attivo')) {
+        await db.execute('ALTER TABLE DatiSistremaApp ADD COLUMN id_catalogo_attivo INTEGER DEFAULT 1');
       }
     } catch (e) {
-      debugPrint("Info: Controllo migrazione fallito. $e");
+      debugPrint('Errore verifica schema: $e');
     }
   }
 
   Future<void> _loadConfigFromDb() async {
     if (_dbGlobale == null) return;
-    
-    final datiSistema = await _dbGlobale!.query('DatiSistremaApp', limit: 1);
-    if (datiSistema.isEmpty) {
-      await _popolaDatiGlobaliDefault(_dbGlobale!);
-      await _loadConfigFromDb();
-      return;
-    }
 
-    String? percorsoDalDb = datiSistema.first['PercorsoPdf'] as String?;
-    if (_isPathInvalidForCurrentPlatform(percorsoDalDb)) {
-      _percorsoPdf = await _getDefaultPdfPath();
-      await _dbGlobale!.update('DatiSistremaApp', {'PercorsoPdf': _percorsoPdf}, where: 'id = ?', whereArgs: [datiSistema.first['id']]);
-    } else {
-      _percorsoPdf = percorsoDalDb!;
-    }
-
-    final idCatalogoAttivo = datiSistema.first['id_catalogo_attivo'] as int? ?? 1;
-    final catalogoInfo = await _dbGlobale!.query('elenco_cataloghi', where: 'id = ?', whereArgs: [idCatalogoAttivo], limit: 1);
-    
-    if (catalogoInfo.isNotEmpty) {
-      _activeCatalogDbName = catalogoInfo.first['nome_file_db'] as String? ?? '';
-      await _loadCatalogoAttivo();
-    } else {
-      debugPrint("❌ Nessun catalogo attivo trovato in DB, provo a usare il primo disponibile...");
-      await synchronizeCatalogs();
-      final allCatalogs = await getAvailableVolumes();
-      if (allCatalogs.isNotEmpty) {
-        await switchVolume(allCatalogs.first['nome_file_db']);
-      } else {
-        debugPrint("❌ ERRORE FATALE: Nessun catalogo disponibile. L'app non può funzionare.");
+    try {
+      final config = await _dbGlobale!.query('DatiSistremaApp', limit: 1);
+      if (config.isNotEmpty) {
+        _percorsoPdf = config.first['PercorsoPdf'] as String? ?? '/storage/emulated/0/JamsetPDF/';
+        debugPrint('📁 Percorso PDF configurato: $_percorsoPdf');
       }
+
+      final catalogoAttivo = await _getCurrentVolume();
+      if (catalogoAttivo.isNotEmpty) {
+        _activeCatalogDbName = catalogoAttivo['nome_file_db'] as String? ?? _vecchioDbName;
+        await _caricaCatalogoAttivo();
+      }
+    } catch (e) {
+      debugPrint('Errore caricamento configurazione: $e');
     }
   }
 
-  Future<void> _loadCatalogoAttivo() async {
-    if (_activeCatalogDbName.isEmpty) {
-      debugPrint("⚠️ _loadCatalogoAttivo chiamato con nome vuoto. Impossibile procedere.");
-      return;
+  Future<void> _caricaCatalogoAttivo() async {
+    try {
+      final catalogoAttivo = await _getCurrentVolume();
+      if (catalogoAttivo.isNotEmpty) {
+        final dbName = catalogoAttivo['nome_file_db'] as String?;
+        if (dbName != null && dbName.isNotEmpty) {
+          final dbPath = p.join(_databasePath, dbName);
+          _dbCatalogoAttivo = await openDatabase(dbPath);
+          _activeCatalogDbName = dbName;
+          debugPrint('🎯 Catalogo attivo caricato: $dbName');
+        }
+      }
+    } catch (e) {
+      debugPrint('Errore caricamento catalogo attivo: $e');
     }
-    
-    final catalogoPath = p.join(_databasePath, _activeCatalogDbName);
+  }
 
-    if (!await databaseExists(catalogoPath)) {
-      debugPrint("‼️ Catalogo '$_activeCatalogDbName' non trovato. Lo creo e popolo da asset...");
-      Database? newDb;
-      try {
-        newDb = await openDatabase(catalogoPath, version: 1);
-        await _creaTabellaSpartiti(newDb);
-        await _creaIndiciFTS(newDb);
-        await _importaDatiDaAsset(newDb, _activeCatalogDbName);
-        await _verificaESincronizzaFTS(newDb);
-        _dbCatalogoAttivo = newDb;
-        debugPrint("   ✅ Catalogo '$_activeCatalogDbName' creato e popolato con successo.");
-      } catch (e, s) {
-        debugPrint("   ❌ ERRORE CRITICO durante la creazione del catalogo: $e\n$s");
-        await newDb?.close();
-        try { await deleteDatabase(catalogoPath); } catch (_) {}
-        _dbCatalogoAttivo = null;
+  Future<Map<String, dynamic>> _getCurrentVolume() async {
+    if (_dbGlobale == null) return {};
+
+    try {
+      final result = await _dbGlobale!.query(
+          'DatiSistremaApp',
+          columns: ['id_catalogo_attivo'],
+          limit: 1
+      );
+
+      if (result.isNotEmpty) {
+        final idCatalogoAttivo = result.first['id_catalogo_attivo'] as int? ?? 1;
+
+        final catalogo = await _dbGlobale!.query(
+            'elenco_cataloghi',
+            where: 'id = ?',
+            whereArgs: [idCatalogoAttivo]
+        );
+
+        if (catalogo.isNotEmpty) {
+          return catalogo.first;
+        }
+      }
+    } catch (e) {
+      debugPrint('Errore _getCurrentVolume: $e');
+    }
+
+    return {};
+  }
+
+  Future<List<Map<String, dynamic>>> getAvailableVolumes() async {
+    if (_dbGlobale == null) return [];
+    return await _dbGlobale!.query('elenco_cataloghi', orderBy: 'nome_catalogo');
+  }
+
+  Future<Map<String, dynamic>> getCurrentVolume() async {
+    return await _getCurrentVolume();
+  }
+
+  Future<bool> switchVolume(String dbName) async {
+    try {
+      final catalogo = await _dbGlobale!.query(
+          'elenco_cataloghi',
+          where: 'nome_file_db = ?',
+          whereArgs: [dbName],
+          limit: 1
+      );
+
+      if (catalogo.isNotEmpty) {
+        final id = catalogo.first['id'] as int;
+
+        await _dbGlobale!.update(
+            'DatiSistremaApp',
+            {'id_catalogo_attivo': id},
+            where: 'id = ?',
+            whereArgs: [1]
+        );
+
+        await reloadConfig();
+        return true;
+      }
+    } catch (e) {
+      debugPrint('Errore switchVolume: $e');
+    }
+
+    return false;
+  }
+
+  // ==================== LOGICA SINCRONIZZAZIONE CORRETTA ====================
+
+  Future<void> synchronizeCatalogs() async {
+    debugPrint('🔄 Sincronizzazione cataloghi...');
+
+    if (_dbGlobale == null) return;
+
+    try {
+      final cataloghi = await _dbGlobale!.query('elenco_cataloghi');
+      debugPrint('   📋 Cataloghi trovati: ${cataloghi.length}');
+
+      for (final catalogo in cataloghi) {
+        final dbName = catalogo['nome_file_db'] as String?;
+        final catalogoId = catalogo['id'] as int?;
+        final nomeCatalogo = catalogo['nome_catalogo'] as String?;
+
+        if (dbName != null && dbName.isNotEmpty) {
+          final dbPath = p.join(_databasePath, dbName);
+          final file = File(dbPath);
+
+          if (!await file.exists()) {
+            debugPrint('   📁 Database non trovato: $nomeCatalogo ($dbName)');
+
+            // SE IL DATABASE NON ESISTE
+            if (dbName == _vecchioDbName) {
+              // Per il catalogo principale: crea con trigger e copia dati
+              await _creaDatabaseConTriggerECopiaDati(dbName);
+            } else {
+              // Per altri cataloghi: crea vuoto
+              await createCatalogoDatabase(dbName);
+            }
+          } else {
+            debugPrint('   ✓ Database esiste già: $dbName');
+
+            // SE IL DATABASE ESISTE GIÀ
+            // 1. Verifica e risincronizza FTS se necessario
+            await _verificaERisincronizzaFTSSeNecessario(dbPath);
+
+            // 2. Aggiorna conteggio brani
+            await _updateBraniCount(catalogoId!, dbPath);
+          }
+        }
+      }
+
+      debugPrint('   ✅ Sincronizzazione completata');
+    } catch (e) {
+      debugPrint('   ❌ Errore nella sincronizzazione: $e');
+    }
+  }
+
+  Future<void> _creaDatabaseConTriggerECopiaDati(String dbName) async {
+    try {
+      debugPrint('   🏗️  Creazione database con trigger attivi...');
+
+      // 1. PRIMA crea database VUOTO con schema e trigger FTS
+      await createCatalogoDatabase(dbName);
+
+      // 2. POI copia SOLO i dati dalla tabella 'spartiti' dell'asset
+      await _copiaSoloDatiSpartitiDaAsset(dbName);
+
+      debugPrint('   ✅ Database creato, trigger attivi e dati copiati');
+    } catch (e) {
+      debugPrint('   ❌ Errore creazione database: $e');
+      // Fallback: crea database vuoto
+      await createCatalogoDatabase(dbName);
+    }
+  }
+
+  Future<void> _copiaSoloDatiSpartitiDaAsset(String dbName) async {
+    try {
+      debugPrint('   📥 Copia dati dalla tabella spartiti dell\'asset...');
+
+      // Carica l'asset
+      final ByteData data = await rootBundle.load('assets/databases/$dbName');
+      final tempPath = p.join(_databasePath, 'temp_$dbName');
+      await File(tempPath).writeAsBytes(data.buffer.asUint8List());
+
+      // Apri database temporaneo (asset) e target
+      final tempDb = await openDatabase(tempPath, readOnly: true);
+      final targetDbPath = p.join(_databasePath, dbName);
+      final targetDb = await openDatabase(targetDbPath);
+
+      // Leggi dati dall'asset
+      final spartiti = await tempDb.rawQuery('SELECT * FROM spartiti');
+      debugPrint('   📊 Record da copiare: ${spartiti.length}');
+
+      if (spartiti.isEmpty) {
+        debugPrint('   ⚠️  Nessun dato da copiare');
         return;
       }
-    } else {
-      await _dbCatalogoAttivo?.close();
-      _dbCatalogoAttivo = await openDatabase(catalogoPath);
-      debugPrint("✅ Catalogo esistente caricato: $_activeCatalogDbName");
-      await _verificaESincronizzaFTS(_dbCatalogoAttivo!);
+
+      // Inserisci dati (i trigger FTS indicizzeranno automaticamente)
+      int count = 0;
+      for (final spartito in spartiti) {
+        await targetDb.insert('spartiti', spartito);
+        count++;
+
+        if (count % 1000 == 0) {
+          debugPrint('   📦 Copiati $count record...');
+        }
+      }
+
+      // Pulisci
+      await tempDb.close();
+      await targetDb.close();
+      await File(tempPath).delete();
+
+      debugPrint('   ✅ $count record copiati e indicizzati automaticamente dai trigger');
+
+    } catch (e) {
+      debugPrint('   ❌ Errore copia dati: $e');
+      // Se non può copiare, almeno avremo un database vuoto con trigger
     }
   }
 
-  Future<void> _creaTabellaSpartiti(Database db) async {
+  Future<void> _verificaERisincronizzaFTSSeNecessario(String dbPath) async {
+    try {
+      final db = await openDatabase(dbPath);
+
+      // Conta record in spartiti vs spartiti_fts
+      final countSpartiti = await db.rawQuery(
+          'SELECT COUNT(*) as count FROM spartiti'
+      );
+      final countFTS = await db.rawQuery(
+          'SELECT COUNT(*) as count FROM spartiti_fts'
+      );
+
+      final numSpartiti = countSpartiti.first['count'] as int? ?? 0;
+      final numFTS = countFTS.first['count'] as int? ?? 0;
+
+      await db.close();
+
+      if (numSpartiti == numFTS) {
+        debugPrint('   ✅ FTS sincronizzata ($numSpartiti record)');
+      } else {
+        debugPrint('   ⚠️  FTS non sincronizzata: $numSpartiti spartiti vs $numFTS in FTS');
+        debugPrint('   🔄 Risincronizzazione necessaria...');
+
+        // Risincronizza
+        await _risincronizzaFTS(dbPath);
+      }
+    } catch (e) {
+      debugPrint('   ❌ Errore verifica FTS: $e');
+    }
+  }
+
+  Future<void> _risincronizzaFTS(String dbPath) async {
+    try {
+      final db = await openDatabase(dbPath);
+
+      debugPrint('   🧹 Pulizia tabella FTS...');
+      await db.execute('DELETE FROM spartiti_fts');
+
+      debugPrint('   📥 Ricostruzione indice FTS...');
+      final spartiti = await db.rawQuery(
+          'SELECT id_univoco_globale, titolo, autore, volume, ArchivioProvenienza FROM spartiti'
+      );
+
+      int count = 0;
+      for (final spartito in spartiti) {
+        await db.insert('spartiti_fts', {
+          'rowid': spartito['id_univoco_globale'],
+          'titolo': spartito['titolo'] ?? '',
+          'autore': spartito['autore'] ?? '',
+          'volume': spartito['volume'] ?? '',
+          'ArchivioProvenienza': spartito['ArchivioProvenienza'] ?? ''
+        });
+        count++;
+      }
+
+      await db.close();
+      debugPrint('   ✅ $count record risincronizzati in FTS');
+    } catch (e) {
+      debugPrint('   ❌ Errore risincronizzazione FTS: $e');
+    }
+  }
+
+  Future<void> _updateBraniCount(int catalogoId, String dbPath) async {
+    try {
+      final db = await openDatabase(dbPath, readOnly: true);
+
+      final result = await db.rawQuery('SELECT COUNT(*) as count FROM spartiti');
+      final count = result.first['count'] as int? ?? 0;
+
+      await db.close();
+
+      if (_dbGlobale != null) {
+        await _dbGlobale!.update(
+            'elenco_cataloghi',
+            {'conteggio_brani': count},
+            where: 'id = ?',
+            whereArgs: [catalogoId]
+        );
+      }
+
+      debugPrint('   📊 Brani nel catalogo: $count');
+    } catch (e) {
+      debugPrint('   ⚠️  Errore conteggio brani: $e');
+    }
+  }
+
+  Future<void> createCatalogoDatabase(String dbName) async {
+    debugPrint('📁 Creazione database catalogo: $dbName');
+    final dbPath = p.join(_databasePath, dbName);
+
+    try {
+      final db = await openDatabase(dbPath, version: 1, onCreate: _creaSchemaCatalogo);
+      await db.close();
+      debugPrint('✅ Database catalogo creato con successo: $dbName');
+    } catch (e) {
+      debugPrint('❌ Errore creazione database $dbName: $e');
+      rethrow;
+    }
+  }
+
+  Future<void> _creaSchemaCatalogo(Database db, int version) async {
+    debugPrint('   🏗️  Creazione schema catalogo con trigger FTS...');
+
+    // Tabella principale spartiti
     await db.execute('''
-      CREATE TABLE IF NOT EXISTS spartiti (
-        id_univoco_globale INTEGER PRIMARY KEY AUTOINCREMENT,
-        IdBra TEXT UNIQUE NOT NULL,
+      CREATE TABLE spartiti (
+        id_univoco_globale INTEGER UNIQUE,
+        IdBra TEXT,
         titolo TEXT,
         autore TEXT,
         strumento TEXT,
         volume TEXT,
         PercRadice TEXT,
         PercResto TEXT,
-        PrimoLInk TEXT,
+        PrimoLink TEXT,
         TipoMulti TEXT,
         TipoDocu TEXT,
         ArchivioProvenienza TEXT,
         NumPag INTEGER,
         NumOrig INTEGER,
         IdVolume TEXT,
-        IdAutore TEXT
+        IdAutore TEXT,
+        PRIMARY KEY (id_univoco_globale AUTOINCREMENT)
       )
     ''');
-  }
 
-  Future<void> _creaIndiciFTS(Database db) async {
-    await _eliminaFTSCompleto(db);
+    // Tabella FTS per ricerca full-text
     await db.execute('''
-      CREATE TRIGGER IF NOT EXISTS spartiti_ai_fts AFTER INSERT ON spartiti BEGIN
+      CREATE VIRTUAL TABLE spartiti_fts USING fts5 (
+        titolo,
+        autore,
+        volume,
+        ArchivioProvenienza,
+        content = 'spartiti',
+        content_rowid = 'id_univoco_globale'
+      )
+    ''');
+
+    // TRIGGER per mantenere sincronizzata la FTS
+    await db.execute('''
+      CREATE TRIGGER spartiti_ai AFTER INSERT ON spartiti BEGIN
         INSERT INTO spartiti_fts(rowid, titolo, autore, volume, ArchivioProvenienza)
-        VALUES (NEW.id_univoco_globale, NEW.titolo, NEW.autore, NEW.volume, NEW.ArchivioProvenienza);
-      END;
+        VALUES (new.id_univoco_globale, new.titolo, new.autore, new.volume, new.ArchivioProvenienza);
+      END
     ''');
-    await db.execute('''
-      CREATE TRIGGER IF NOT EXISTS spartiti_au_fts AFTER UPDATE ON spartiti BEGIN
-        UPDATE spartiti_fts 
-        SET titolo = NEW.titolo, autore = NEW.autore, volume = NEW.volume, ArchivioProvenienza = NEW.ArchivioProvenienza
-        WHERE rowid = OLD.id_univoco_globale;
-      END;
-    ''');
-    await db.execute('''
-      CREATE TRIGGER IF NOT EXISTS spartiti_ad_fts AFTER DELETE ON spartiti BEGIN
-        DELETE FROM spartiti_fts WHERE rowid = OLD.id_univoco_globale;
-      END;
-    ''');
-    await db.execute('''
-      CREATE VIRTUAL TABLE spartiti_fts USING fts5(
-        titolo, autore, volume, ArchivioProvenienza,
-        content='spartiti', content_rowid='id_univoco_globale'
-      )
-    ''');
-  }
-  
-  Future<int> _importaDatiDaAsset(Database db, String assetName) async {
-    try {
-      final ByteData data = await rootBundle.load('assets/databases/$assetName');
-      final tempAssetDbPath = p.join((await getTemporaryDirectory()).path, "master_temp.db");
-      await File(tempAssetDbPath).writeAsBytes(data.buffer.asUint8List(), flush: true);
 
-      Database? masterDb;
-      int recordImportati = 0;
-      try {
-        masterDb = await openReadOnlyDatabase(tempAssetDbPath);
-        final sourceTable = Platform.isWindows ? 'spartiti' : 'spartiti_andr';
-        final dataToInsert = await masterDb.query(sourceTable);
+    await db.execute('''
+      CREATE TRIGGER spartiti_ad AFTER DELETE ON spartiti BEGIN
+        INSERT INTO spartiti_fts(spartiti_fts, rowid, titolo, autore, volume, ArchivioProvenienza)
+        VALUES('delete', old.id_univoco_globale, old.titolo, old.autore, old.volume, old.ArchivioProvenienza);
+      END
+    ''');
 
-        if (dataToInsert.isEmpty) return 0;
-        
-        final chunkSize = 200;
-        for (var i = 0; i < dataToInsert.length; i += chunkSize) {
-          final end = (i + chunkSize < dataToInsert.length) ? i + chunkSize : dataToInsert.length;
-          final chunk = dataToInsert.sublist(i, end);
-          await db.transaction((txn) async {
-            final batch = txn.batch();
-            for (final row in chunk) {
-              final rowCopy = Map<String, dynamic>.from(row);
-              rowCopy.remove('id_univoco_globale');
-              batch.insert('spartiti', rowCopy, conflictAlgorithm: ConflictAlgorithm.replace);
-            }
-            await batch.commit(noResult: true);
-          });
-          recordImportati += chunk.length;
-        }
-        return recordImportati;
-      } finally {
-        await masterDb?.close();
-        try { await deleteDatabase(tempAssetDbPath); } catch (_) {}
-      }
-    } catch (e) {
-      return 0;
-    }
+    await db.execute('''
+      CREATE TRIGGER spartiti_au AFTER UPDATE ON spartiti BEGIN
+        INSERT INTO spartiti_fts(spartiti_fts, rowid, titolo, autore, volume, ArchivioProvenienza)
+        VALUES('delete', old.id_univoco_globale, old.titolo, old.autore, old.volume, old.ArchivioProvenienza);
+        INSERT INTO spartiti_fts(rowid, titolo, autore, volume, ArchivioProvenienza)
+        VALUES (new.id_univoco_globale, new.titolo, new.autore, new.volume, new.ArchivioProvenienza);
+      END
+    ''');
+
+    // Indici per performance
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_spartiti_titolo ON spartiti(titolo)');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_spartiti_autore ON spartiti(autore)');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_spartiti_IdBra ON spartiti(IdBra)');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_spartiti_volume ON spartiti(volume)');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_spartiti_strumento ON spartiti(strumento)');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_spartiti_archivio ON spartiti(ArchivioProvenienza)');
+
+    debugPrint('   ✅ Schema catalogo e trigger FTS creati');
   }
 
-  Future<void> rebuildActiveCatalogFtsIndex() async {
+  // Metodi placeholder per compatibilità
+  Future<int> importFromCsv(String csvPath, String targetDbName) async {
+    debugPrint('📥 Importazione CSV da $csvPath a $targetDbName');
+    return 0;
+  }
+
+  Future<int> populateCatalogFromMaster(String targetDbName) async {
+    debugPrint('📚 Popolazione catalogo $targetDbName da master');
+    return 0;
+  }
+
+  Future<void> risincronizzaFTSCompleta() async {
     if (_dbCatalogoAttivo == null) return;
-    await _verificaESincronizzaFTS(_dbCatalogoAttivo!);
-  }
-  
-  Future<void> _verificaESincronizzaFTS(Database db) async {
+
+    debugPrint('\n🔄 RISINCRONIZZAZIONE COMPLETA FTS...');
+
     try {
-      final countSpartiti = (await db.rawQuery("SELECT COUNT(*) as c FROM spartiti")).first['c'] as int? ?? 0;
-      final countFTS = (await db.rawQuery("SELECT COUNT(*) as c FROM spartiti_fts")).first['c'] as int? ?? 0;
-      
-      if (countSpartiti != countFTS) {
-        await db.execute("INSERT INTO spartiti_fts(spartiti_fts) VALUES('rebuild');");
-      }
+      final dbPath = p.join(_databasePath, _activeCatalogDbName);
+      await _risincronizzaFTS(dbPath);
+      debugPrint('🎉 Risincronizzazione completata');
     } catch (e) {
-      try {
-        await _creaIndiciFTS(db);
-        await db.execute("INSERT INTO spartiti_fts(rowid, titolo, autore, volume, ArchivioProvenienza) SELECT id_univoco_globale, titolo, autore, volume, ArchivioProvenienza FROM spartiti");
-      } catch (e2) {}
-    }
-  }
-
-  Future<void> _eliminaFTSCompleto(Database db) async {
-    await db.execute("DROP TRIGGER IF EXISTS spartiti_ai_fts");
-    await db.execute("DROP TRIGGER IF EXISTS spartiti_au_fts");
-    await db.execute("DROP TRIGGER IF EXISTS spartiti_ad_fts");
-    await db.execute("DROP TABLE IF EXISTS spartiti_fts");
-  }
-
-  Future<String> _getDefaultPdfPath() async {
-    if (Platform.isAndroid) return '/storage/emulated/0/JamsetPDF/';
-    if (Platform.isWindows) return r'C:\JamsetPDF\';
-    final supportDir = await getApplicationSupportDirectory();
-    return p.join(supportDir.path, 'JamsetPDF');
-  }
-
-  bool _isPathInvalidForCurrentPlatform(String? path) {
-    if (path == null || path.isEmpty) return true;
-    if (Platform.isAndroid && (path.contains(r'\') || path.startsWith('C:'))) return true;
-    if (Platform.isWindows && path.contains('/storage/')) return true;
-    return false;
-  }
-
-  Future<Map<String, dynamic>> getCurrentVolume() async {
-    if (_dbGlobale == null) return {};
-    final id = (await _dbGlobale!.query('DatiSistremaApp', limit: 1)).first['id_catalogo_attivo'] as int? ?? 1;
-    final result = await _dbGlobale!.query('elenco_cataloghi', where: 'id = ?', whereArgs: [id], limit: 1);
-    return result.isNotEmpty ? result.first : {};
-  }
-
-  Future<List<Map<String, dynamic>>> getAvailableVolumes() async {
-    if (_dbGlobale == null) return [];
-    try {
-      return await _dbGlobale!.query('elenco_cataloghi', orderBy: 'nome_catalogo');
-    } catch (e) {
-      return [];
-    }
-  }
-
-  Future<bool> switchVolume(String dbFileName) async {
-    if (_dbGlobale == null) return false;
-    try {
-      final catalogo = await _dbGlobale!.query('elenco_cataloghi', where: 'nome_file_db = ?', whereArgs: [dbFileName], limit: 1);
-      if (catalogo.isEmpty) return false;
-      await _dbGlobale!.update('DatiSistremaApp', {'id_catalogo_attivo': catalogo.first['id']}, where: 'id = 1');
-      await reloadConfig();
-      return true;
-    } catch (e) {
-      return false;
-    }
-  }
-
-  Future<void> synchronizeCatalogs() async {
-    if (_dbGlobale == null) return;
-    debugPrint("🔄 Sincronizzazione elenco cataloghi...");
-
-    final dir = Directory(_databasePath);
-    if (!await dir.exists()) return;
-
-    final files = await dir.list().toList();
-    final dbFiles = files.where((f) => f.path.endsWith('.db') && p.basename(f.path) != _dbGlobaleName).map((f) => p.basename(f.path)).toList();
-
-    final catalogInDb = await _dbGlobale!.query('elenco_cataloghi');
-    final dbNamesInDb = catalogInDb.map((row) => row['nome_file_db'] as String).toSet();
-
-    for (final fileName in dbFiles) {
-      if (!dbNamesInDb.contains(fileName)) {
-        await _dbGlobale!.insert('elenco_cataloghi', {
-          'nome_catalogo': p.basenameWithoutExtension(fileName),
-          'nome_file_db': fileName,
-          'descrizione': 'Catalogo importato automaticamente'
-        });
-      }
-    }
-
-    for (final row in catalogInDb) {
-      final dbName = row['nome_file_db'] as String;
-      if (!dbFiles.contains(dbName)) {
-        await _dbGlobale!.delete('elenco_cataloghi', where: 'nome_file_db = ?', whereArgs: [dbName]);
-      }
+      debugPrint('❌ Errore risincronizzazione FTS: $e');
     }
   }
 
   Future<void> runDiagnostics() async {
-     debugPrint("🩺 Esecuzione diagnostica...");
+    debugPrint('\n🩺 DIAGNOSTICA INIZIO');
+
+    try {
+      if (_dbGlobale == null) {
+        debugPrint('   ❌ Database globale NON inizializzato');
+      } else {
+        debugPrint('   ✅ Database globale OK');
+
+        final cataloghi = await getAvailableVolumes();
+        debugPrint('   📊 Cataloghi presenti: ${cataloghi.length}');
+
+        for (final catalogo in cataloghi) {
+          debugPrint('      - ${catalogo['nome_catalogo']} (${catalogo['nome_file_db']}) - Brani: ${catalogo['conteggio_brani']}');
+        }
+
+        final active = await getCurrentVolume();
+        debugPrint('   🎯 Catalogo attivo: ${active['nome_catalogo']} (${active['nome_file_db']})');
+
+        if (dbCatalogoAttivo != null) {
+          final tables = await dbCatalogoAttivo!.rawQuery(
+              "SELECT name FROM sqlite_master WHERE type='table'"
+          );
+          debugPrint('   📊 Tabelle nel catalogo attivo (${tables.length}):');
+
+          for (final table in tables.take(5)) {
+            debugPrint('      - ${table['name']}');
+          }
+          if (tables.length > 5) {
+            debugPrint('      ... e altre ${tables.length - 5} tabelle');
+          }
+
+          final countResult = await dbCatalogoAttivo!.rawQuery(
+              'SELECT COUNT(*) as count FROM spartiti'
+          );
+          final count = countResult.first['count'] as int? ?? 0;
+          debugPrint('   📈 Spartiti nel catalogo: $count');
+
+          // Diagnostica FTS
+          debugPrint('   🔍 DIAGNOSTICA TABELLA FTS:');
+          final countSpartiti = await dbCatalogoAttivo!.rawQuery(
+              'SELECT COUNT(*) as count FROM spartiti'
+          );
+          final countFTS = await dbCatalogoAttivo!.rawQuery(
+              'SELECT COUNT(*) as count FROM spartiti_fts'
+          );
+
+          final numSpartiti = countSpartiti.first['count'] as int? ?? 0;
+          final numFTS = countFTS.first['count'] as int? ?? 0;
+
+          debugPrint('      📊 Record in "spartiti": $numSpartiti');
+          debugPrint('      📊 Record in "spartiti_fts": $numFTS');
+
+          if (numSpartiti == numFTS) {
+            debugPrint('      ✅ Tabelle sincronizzate');
+          } else {
+            debugPrint('      ⚠️  DISCREPANZA: ${numSpartiti - numFTS} record non sincronizzati');
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('   ❌ Errore diagnostica: $e');
+    }
+
+    debugPrint('🩺 DIAGNOSTICA FINE\n');
+  }
+
+  Future<void> close() async {
+    if (_dbCatalogoAttivo != null) {
+      await _dbCatalogoAttivo!.close();
+    }
+    if (_dbGlobale != null) {
+      await _dbGlobale!.close();
+    }
   }
 }

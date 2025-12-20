@@ -63,6 +63,7 @@ Future<void> main() async {
     // 6. INIZIALIZZA IL DATABASE TRAMITE IL NUOVO SERVICE
     debugPrint("\n🚀 INIZIALIZZAZIONE DATABASE SERVICE...");
     await databaseService.initialize();
+    await databaseService.runDiagnostics(); // Ora include diagnostica FTS
     debugPrint("✅ DATABASE SERVICE INIZIALIZZATO CON SUCCESSO.");
 
     // 7. Sincronizza le variabili globali con i dati dal Service
@@ -70,11 +71,6 @@ Future<void> main() async {
     gDatabasePath = databaseService.databasePath;
     final currentVolume = await databaseService.getCurrentVolume();
     gActiveCatalogDbName = currentVolume['nome_file_db'] as String? ?? '';
-
-    // 8. Esegui diagnostica (opzionale)
-    if (kDebugMode) {
-      await databaseService.runDiagnostics();
-    }
 
     debugPrint("\n=== RIEPILOGO AVVIO ===");
     debugPrint("Percorso PDF: $gPercorsoPdf");
@@ -161,7 +157,7 @@ void _setupAdvancedLogging() {
 
       // Se il messaggio contiene una parola chiave della tastiera, lo ignoriamo
       bool shouldIgnore = keyboardIgnoreKeywords.any((keyword) => message.contains(keyword));
-      
+
       if (!shouldIgnore) {
         final timestamp = DateTime.now().toString().substring(11, 23);
         print("[$timestamp] $message");
