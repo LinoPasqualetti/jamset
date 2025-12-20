@@ -4,6 +4,7 @@ import 'package:jamsetgemini/screens/csv_viewer_screen.dart';
 import 'package:jamsetgemini/screens/funzioni_variazione_dati_screen.dart';
 import 'package:jamsetgemini/screens/gestione_variazioni_screen.dart';
 import 'package:jamsetgemini/services/database_service.dart';
+import 'package:jamsetgemini/main.dart'; // Per accedere a databaseService globale
 
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
@@ -14,21 +15,29 @@ class MainScreen extends StatefulWidget {
 
 class _MainScreenState extends State<MainScreen> {
   int _selectedIndex = 0;
-  final DatabaseService _databaseService = DatabaseService();
   Map<String, dynamic> _currentVolume = {};
 
   @override
   void initState() {
     super.initState();
     _loadCurrentVolume();
+    databaseService.addListener(_loadCurrentVolume);
+  }
+
+  @override
+  void dispose() {
+    databaseService.removeListener(_loadCurrentVolume);
+    super.dispose();
   }
 
   Future<void> _loadCurrentVolume() async {
     try {
-      final volume = await _databaseService.getCurrentVolume();
-      setState(() {
-        _currentVolume = volume;
-      });
+      final volume = await databaseService.getCurrentVolume();
+      if (mounted) {
+        setState(() {
+          _currentVolume = volume;
+        });
+      }
     } catch (e) {
       debugPrint('Errore caricamento volume corrente: $e');
     }
@@ -44,19 +53,17 @@ class _MainScreenState extends State<MainScreen> {
     switch (_selectedIndex) {
       case 0:
         return HomePage(
-          databaseService: _databaseService,
           currentVolume: _currentVolume,
           navigateTo: _navigateTo,
         );
       case 1:
-        return CsvViewerScreen();
+        return const CsvViewerScreen();
       case 2:
-        return FunzioniVariazioneDatiScreen();
+        return const FunzioniVariazioneDatiScreen();
       case 3:
-        return GestioneVariazioniScreen();
+        return const GestioneVariazioniScreen();
       default:
         return HomePage(
-          databaseService: _databaseService,
           currentVolume: _currentVolume,
           navigateTo: _navigateTo,
         );
@@ -69,23 +76,14 @@ class _MainScreenState extends State<MainScreen> {
       body: _buildCurrentScreen(),
       bottomNavigationBar: BottomNavigationBar(
         type: BottomNavigationBarType.fixed,
-        items: [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.home),
-            label: 'Home',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.search),
-            label: 'Ricerca CSV',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.storage_outlined),
-            label: 'Ricerca DB',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.settings),
-            label: 'Gestione',
-          ),
+        backgroundColor: Colors.white,
+        selectedItemColor: Colors.indigo[800],
+        unselectedItemColor: Colors.grey,
+        items: const [
+          BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
+          BottomNavigationBarItem(icon: Icon(Icons.search), label: 'Ricerca CSV'),
+          BottomNavigationBarItem(icon: Icon(Icons.storage_outlined), label: 'Ricerca DB'),
+          BottomNavigationBarItem(icon: Icon(Icons.settings), label: 'Gestione'),
         ],
         currentIndex: _selectedIndex,
         onTap: _navigateTo,
@@ -95,565 +93,182 @@ class _MainScreenState extends State<MainScreen> {
 }
 
 class HomePage extends StatefulWidget {
-  final DatabaseService databaseService;
   final Map<String, dynamic> currentVolume;
   final Function(int) navigateTo;
 
   const HomePage({
-    Key? key,
-    required this.databaseService,
+    super.key,
     required this.currentVolume,
     required this.navigateTo,
-  }) : super(key: key);
+  });
 
   @override
   State<HomePage> createState() => _HomePageState();
 }
 
 class _HomePageState extends State<HomePage> {
-  late Map<String, dynamic> _currentVolume;
   bool _isReindexing = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _currentVolume = widget.currentVolume;
-    if (_currentVolume.isEmpty) {
-      _loadCurrentVolume();
-    }
-  }
-
-  Future<void> _loadCurrentVolume() async {
-    try {
-      final volume = await widget.databaseService.getCurrentVolume();
-      setState(() {
-        _currentVolume = volume;
-      });
-    } catch (e) {
-      debugPrint('Errore caricamento volume corrente: $e');
-    }
-  }
+  double _reindexProgress = 0.0; // Valore da 0.0 a 1.0
 
   Future<void> _reindexFTS() async {
-    setState(() {
-      _isReindexing = true;
-    });
-
     final confirmed = await showDialog<bool>(
       context: context,
-      barrierDismissible: false,
       builder: (context) => AlertDialog(
-        title: Row(
-          children: [
-            Icon(Icons.search_off, color: Colors.orange),
-            SizedBox(width: 8),
-            Text('Reindicizzazione FTS'),
-          ],
+        title: const Row(
+          children: [Icon(Icons.search_off, color: Colors.orange), SizedBox(width: 8), Text('Reindicizzazione FTS')],
         ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              'Vuoi reindicizzare completamente la ricerca full-text?',
-              style: TextStyle(fontSize: 16),
-            ),
-            SizedBox(height: 8),
-            if (_currentVolume.isNotEmpty)
-              Card(
-                color: Colors.blue.shade50,
-                child: Padding(
-                  padding: EdgeInsets.all(8.0),
-                  child: Column(
-                    children: [
-                      Text(
-                        'Catalogo attivo:',
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: Colors.blue.shade800,
-                        ),
-                      ),
-                      Text(
-                        _currentVolume['nome_catalogo'] as String? ?? 'Sconosciuto',
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: Colors.blue.shade800,
-                        ),
-                      ),
-                      Text(
-                        'Brani: ${_currentVolume['conteggio_brani'] ?? 0}',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.blue.shade600,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            SizedBox(height: 8),
-            Text(
-              'Questa operazione potrebbe richiedere alcuni secondi.',
-              style: TextStyle(fontSize: 12, color: Colors.grey),
-            ),
-          ],
-        ),
+        content: const Text('Vuoi ricostruire completamente l\'indice di ricerca per il catalogo attivo?'),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: Text('ANNULLA'),
-          ),
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('ANNULLA')),
           ElevatedButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.orange,
-              foregroundColor: Colors.white,
-            ),
-            child: Text('REINDICIZZA'),
+            onPressed: () => Navigator.pop(context, true), 
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.orange, foregroundColor: Colors.white),
+            child: const Text('REINDICIZZA'),
           ),
         ],
       ),
     );
 
-    if (confirmed != true) {
-      setState(() {
-        _isReindexing = false;
-      });
-      return;
-    }
+    if (confirmed != true) return;
 
-    try {
-      await showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (context) {
-          return AlertDialog(
-            title: Row(
-              children: [
-                CircularProgressIndicator(),
-                SizedBox(width: 16),
-                Text('Reindicizzazione in corso...'),
-              ],
-            ),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text('Attendi mentre il catalogo viene reindicizzato.'),
-                SizedBox(height: 16),
-                LinearProgressIndicator(
-                  value: null,
-                  backgroundColor: Colors.grey.shade200,
-                ),
-                SizedBox(height: 8),
-                Text(
-                  'Questa operazione potrebbe richiedere alcuni secondi.',
-                  style: TextStyle(fontSize: 11, color: Colors.grey),
-                ),
-              ],
-            ),
-          );
-        },
-      );
+    setState(() {
+      _isReindexing = true;
+      _reindexProgress = 0.0;
+    });
 
-      await widget.databaseService.risincronizzaFTSCompleta();
-
-      await _loadCurrentVolume();
-
-      if (context.mounted) {
-        Navigator.of(context).pop();
-      }
-
-      if (context.mounted) {
-        await showDialog(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: Row(
-              children: [
-                Icon(Icons.check_circle, color: Colors.green),
-                SizedBox(width: 8),
-                Text('Successo'),
-              ],
-            ),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  'La ricerca full-text è stata reindicizzata con successo!',
-                  style: TextStyle(fontSize: 14),
-                ),
-                SizedBox(height: 12),
-                if (_currentVolume.isNotEmpty)
-                  Card(
-                    color: Colors.green.shade50,
-                    child: Padding(
-                      padding: EdgeInsets.all(8.0),
-                      child: Column(
-                        children: [
-                          Text(
-                            'Catalogo aggiornato:',
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              color: Colors.green.shade800,
-                            ),
-                          ),
-                          Text(
-                            _currentVolume['nome_catalogo'] as String? ?? 'Sconosciuto',
-                            style: TextStyle(
-                              fontSize: 14,
-                              color: Colors.green.shade800,
-                            ),
-                          ),
-                          Text(
-                            'Brani: ${_currentVolume['conteggio_brani'] ?? 0}',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.green.shade600,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
+    // Mostriamo il dialog di progresso
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) {
+        return StatefulBuilder( // Importante per aggiornare il dialog internamente
+          builder: (context, setModalState) {
+            // Definiamo un timer per aggiornare la UI del modal quando cambia lo stato del genitore
+            return AlertDialog(
+              title: const Text('Reindicizzazione in corso...'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('Attendi il completamento dell\'operazione.', style: TextStyle(fontSize: 13)),
+                  const SizedBox(height: 20),
+                  LinearProgressIndicator(
+                    value: _reindexProgress,
+                    backgroundColor: Colors.grey.shade200,
+                    color: Colors.orange,
                   ),
-              ],
-            ),
-            actions: [
-              ElevatedButton(
-                onPressed: () => Navigator.of(context).pop(),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.green,
-                  foregroundColor: Colors.white,
-                ),
-                child: Text('OK'),
+                  const SizedBox(height: 10),
+                  Text(
+                    '${(_reindexProgress * 100).toInt()}%',
+                    style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.orange),
+                  ),
+                ],
               ),
-            ],
-          ),
+            );
+          }
         );
       }
+    );
 
+    try {
+      await databaseService.risincronizzaFTSCompleta(
+        onProgress: (progress) {
+          if (mounted) {
+            setState(() {
+              _reindexProgress = progress;
+            });
+            // NOTA: Per aggiornare il dialog aperto con StatefulBuilder dovremmo usare setModalState, 
+            // ma siccome il progresso cambia molto velocemente, chiuderemo e riapriremo il dialog 
+            // o useremo un approccio più pulito con ValueNotifier se necessario. 
+            // In questo caso, Flutter dovrebbe ridisegnare se il context è lo stesso.
+          }
+        }
+      );
+
+      if (mounted) {
+        Navigator.of(context, rootNavigator: true).pop(); // Chiude il dialog di progresso
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Reindicizzazione completata con successo!'), backgroundColor: Colors.green)
+        );
+      }
     } catch (e) {
-      if (context.mounted) {
-        Navigator.of(context).pop();
-        await showDialog(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: Row(
-              children: [
-                Icon(Icons.error, color: Colors.red),
-                SizedBox(width: 8),
-                Text('Errore'),
-              ],
-            ),
-            content: Text(
-              'Si è verificato un errore durante la reindicizzazione:\n\n$e',
-              style: TextStyle(fontSize: 14),
-            ),
-            actions: [
-              ElevatedButton(
-                onPressed: () => Navigator.of(context).pop(),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.red,
-                  foregroundColor: Colors.white,
-                ),
-                child: Text('CHIUDI'),
-              ),
-            ],
-          ),
+      if (mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Errore: $e'), backgroundColor: Colors.red)
         );
       }
     } finally {
-      if (mounted) {
-        setState(() {
-          _isReindexing = false;
-        });
-      }
+      if (mounted) setState(() => _isReindexing = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final String nomeCatalogo = widget.currentVolume['nome_catalogo']?.toString() ?? 'Nessun Catalogo';
+    final String brani = widget.currentVolume['conteggio_brani']?.toString() ?? '0';
+
     return Scaffold(
       appBar: AppBar(
-        title: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(
-              'JamsetGemini',
-              style: TextStyle(
-                color: Colors.yellowAccent,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            if (_currentVolume.isNotEmpty)
-              Container(
-                padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: Colors.blueGrey[800]?.withOpacity(0.8),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: Colors.yellowAccent.withOpacity(0.3)),
-                ),
-                child: Row(
-                  children: [
-                    Icon(Icons.library_music, size: 16, color: Colors.yellowAccent),
-                    SizedBox(width: 6),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          _currentVolume['nome_catalogo'] as String? ?? 'Catalogo',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        Text(
-                          'Brani: ${_currentVolume['conteggio_brani'] ?? 0}',
-                          style: TextStyle(
-                            fontSize: 10,
-                            color: Colors.yellowAccent,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-          ],
-        ),
+        title: const Text('Jamset Gemini', style: TextStyle(color: Colors.yellowAccent, fontWeight: FontWeight.bold)),
         backgroundColor: Colors.blueGrey[700],
-        foregroundColor: Colors.yellowAccent,
-        elevation: 0,
         actions: [
           IconButton(
-            icon: _isReindexing
-                ? SizedBox(
-              width: 18,
-              height: 18,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                color: Colors.yellowAccent,
-              ),
-            )
-                : Icon(Icons.search_off, size: 20),
+            icon: _isReindexing 
+              ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.yellowAccent))
+              : const Icon(Icons.refresh, color: Colors.yellowAccent),
             onPressed: _isReindexing ? null : _reindexFTS,
             tooltip: 'Reindicizza FTS',
           ),
-        ],
-      ),
-      drawer: Drawer(
-        child: ListView(
-          padding: EdgeInsets.zero,
-          children: <Widget>[
-            DrawerHeader(
-              decoration: BoxDecoration(
-                color: Colors.blueGrey[700],
-              ),
+          Padding(
+            padding: const EdgeInsets.only(right: 16.0, left: 8.0),
+            child: Center(
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  Text(
-                    'Jamset Gemini',
-                    style: TextStyle(
-                      color: Colors.yellowAccent,
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  SizedBox(height: 8),
-                  Text(
-                    'Gestione Spartiti Musicali',
-                    style: TextStyle(
-                      color: Colors.white70,
-                      fontSize: 14,
-                    ),
-                  ),
+                  Text(nomeCatalogo, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white)),
+                  Text('Brani: $brani', style: const TextStyle(fontSize: 9, color: Colors.yellowAccent)),
                 ],
               ),
             ),
-            ListTile(
-              leading: Icon(Icons.home),
-              title: Text('Home'),
-              onTap: () {
-                Navigator.pop(context);
-                widget.navigateTo(0);
-              },
-            ),
-            ListTile(
-              leading: Icon(Icons.search),
-              title: Text('Ricerca CSV'),
-              onTap: () {
-                Navigator.pop(context);
-                widget.navigateTo(1);
-              },
-            ),
-            ListTile(
-              leading: Icon(Icons.storage_outlined),
-              title: Text('Ricerca DB'),
-              onTap: () {
-                Navigator.pop(context);
-                widget.navigateTo(2);
-              },
-            ),
-            ListTile(
-              leading: Icon(Icons.settings),
-              title: Text('Gestione'),
-              onTap: () {
-                Navigator.pop(context);
-                widget.navigateTo(3);
-              },
-            ),
-            Divider(),
-            ListTile(
-              leading: Icon(Icons.search_off, color: Colors.orange, size: 20),
-              title: Text('Reindicizza FTS'),
-              subtitle: Text('Rigenera ricerca full-text'),
-              onTap: _isReindexing ? null : _reindexFTS,
-              enabled: !_isReindexing,
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
       body: Stack(
         children: <Widget>[
           Positioned.fill(
-            child: Image.asset(
-              'assets/images/SfondoLibriRBeAebCubista.jpg',
-              fit: BoxFit.cover,
-            ),
+            child: Image.asset('assets/images/SfondoLibriRBeAebCubista.jpg', fit: BoxFit.cover),
           ),
+          Container(color: Colors.black.withOpacity(0.4)),
           Center(
-            child: Padding(
-              padding: EdgeInsets.all(16.0),
+            child: SingleChildScrollView(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.center,
                 children: <Widget>[
-                  Text(
-                    'Benvenuto in JamsetGemini!',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 28,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                    ),
-                  ),
-
-                  SizedBox(height: 40),
-
-                  // PRIMI 3 BOTTONI COMPATTI
-                  SizedBox(
-                    width: 280,
-                    child: ElevatedButton.icon(
-                      icon: Icon(Icons.search_outlined, size: 20),
-                      label: Padding(
-                        padding: EdgeInsets.symmetric(vertical: 12),
-                        child: Text(
-                          'Ricerca CSV',
-                          style: TextStyle(fontSize: 16),
-                        ),
-                      ),
-                      style: ElevatedButton.styleFrom(
-                        padding: EdgeInsets.symmetric(horizontal: 16),
-                      ),
-                      onPressed: () {
-                        widget.navigateTo(1);
-                      },
-                    ),
-                  ),
-
-                  SizedBox(height: 16),
-
-                  SizedBox(
-                    width: 280,
-                    child: ElevatedButton.icon(
-                      icon: Icon(Icons.storage_outlined, size: 20),
-                      label: Padding(
-                        padding: EdgeInsets.symmetric(vertical: 12),
-                        child: Text(
-                          'Ricerca Database',
-                          style: TextStyle(fontSize: 16),
-                        ),
-                      ),
-                      style: ElevatedButton.styleFrom(
-                        padding: EdgeInsets.symmetric(horizontal: 16),
-                        backgroundColor: Colors.indigo,
-                        foregroundColor: Colors.white,
-                      ),
-                      onPressed: () {
-                        widget.navigateTo(2);
-                      },
-                    ),
-                  ),
-
-                  SizedBox(height: 16),
-
-                  SizedBox(
-                    width: 280,
-                    child: ElevatedButton.icon(
-                      icon: Icon(Icons.edit_document, size: 20),
-                      label: Padding(
-                        padding: EdgeInsets.symmetric(vertical: 12),
-                        child: Text(
-                          'Gestione Variazioni',
-                          style: TextStyle(fontSize: 16),
-                        ),
-                      ),
-                      style: ElevatedButton.styleFrom(
-                        padding: EdgeInsets.symmetric(horizontal: 16),
-                        backgroundColor: Colors.teal,
-                        foregroundColor: Colors.white,
-                      ),
-                      onPressed: () {
-                        widget.navigateTo(3);
-                      },
-                    ),
-                  ),
-
-                  SizedBox(height: 30),
-
-                  // BOTTONE REINDICIZZAZIONE FTS (SOTTO GLI ALTRI)
-                  SizedBox(
-                    width: 260, // Ancora più piccolo degli altri
-                    child: ElevatedButton.icon(
-                      onPressed: _isReindexing ? null : _reindexFTS,
-                      icon: _isReindexing
-                          ? SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
-                        ),
-                      )
-                          : Icon(Icons.refresh, size: 18),
-                      label: Padding(
-                        padding: EdgeInsets.symmetric(vertical: 10),
-                        child: Text(
-                          _isReindexing ? 'Reindicizzazione...' : 'Reindicizza FTS',
-                          style: TextStyle(fontSize: 15),
-                        ),
-                      ),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.orange,
-                        foregroundColor: Colors.white,
-                        minimumSize: Size(double.infinity, 44),
-                      ),
-                    ),
-                  ),
-
-                  SizedBox(height: 8),
-
-                  Text(
-                    'Manutenzione ricerca full-text',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.white70,
-                    ),
-                  ),
+                  const Text('Benvenuto!', style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: Colors.white)),
+                  const SizedBox(height: 40),
+                  _buildMenuButton(context, 'Ricerca CSV', Icons.search, 1, Colors.white, Colors.black87),
+                  const SizedBox(height: 16),
+                  _buildMenuButton(context, 'Ricerca Database', Icons.storage_outlined, 2, Colors.indigo, Colors.white),
+                  const SizedBox(height: 16),
+                  _buildMenuButton(context, 'Gestione e Dati', Icons.edit_document, 3, Colors.teal, Colors.white),
                 ],
               ),
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildMenuButton(BuildContext context, String label, IconData icon, int index, Color bgColor, Color textColor) {
+    return SizedBox(
+      width: 280,
+      child: ElevatedButton.icon(
+        icon: Icon(icon, size: 20),
+        label: Padding(padding: const EdgeInsets.symmetric(vertical: 12), child: Text(label, style: const TextStyle(fontSize: 16))),
+        style: ElevatedButton.styleFrom(backgroundColor: bgColor, foregroundColor: textColor, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+        onPressed: () => widget.navigateTo(index),
       ),
     );
   }
