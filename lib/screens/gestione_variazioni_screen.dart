@@ -1,12 +1,10 @@
 // lib/screens/gestione_variazioni_screen.dart
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:jamsetgemini/screens/gestione_dati_globali_screen.dart';
 import 'package:jamsetgemini/screens/test_apertura_file_screen.dart';
 import 'package:jamsetgemini/screens/dichiarazione_file_volume_screen.dart';
-import 'package:jamsetgemini/services/database_service.dart';
-
-import '../main.dart'; // Importa databaseService
+import 'package:jamsetgemini/screens/elenco_volumi_catalogo_screen.dart'; // Nuova Schermata
+import 'package:jamsetgemini/screens/GestisciElencoCataloghi.dart'; // Gestione Database
 
 class GestioneVariazioniScreen extends StatelessWidget {
   const GestioneVariazioniScreen({super.key});
@@ -45,18 +43,28 @@ class GestioneVariazioniScreen extends StatelessWidget {
                       children: [
                         _buildFeatureButton(
                           context,
-                          icon: Icons.upload_file_outlined,
-                          title: 'a) Carica PDF',
-                          subtitle: 'Aggiungi nuovi spartiti',
-                          onTap: () {},
+                          icon: Icons.storage_rounded,
+                          title: 'a) Elenco Cataloghi',
+                          subtitle: 'Gestisci i file database (.db)',
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (context) => const GestisciElencoCataloghi()),
+                            );
+                          },
                         ),
                         const SizedBox(width: 8),
                         _buildFeatureButton(
                           context,
-                          icon: Icons.storage,
+                          icon: Icons.library_books,
                           title: 'b) Gestione Volumi',
-                          subtitle: 'Seleziona database e gestisci cataloghi',
-                          onTap: () => _showSimpleDatabaseDialog(context),
+                          subtitle: 'Indice dei volumi nel catalogo attivo',
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (context) => const ElencoVolumiCatalogoScreen()),
+                            );
+                          },
                         ),
                       ],
                     ),
@@ -80,9 +88,7 @@ class GestioneVariazioniScreen extends StatelessWidget {
                           onTap: () {
                             Navigator.push(
                               context,
-                              MaterialPageRoute(
-                                builder: (context) => const GestioneDatiGlobaliScreen(),
-                              ),
+                              MaterialPageRoute(builder: (context) => const GestioneDatiGlobaliScreen()),
                             );
                           },
                         ),
@@ -100,9 +106,7 @@ class GestioneVariazioniScreen extends StatelessWidget {
                           onTap: () {
                             Navigator.push(
                               context,
-                              MaterialPageRoute(
-                                builder: (context) => const TestAperturaFileScreen(),
-                              ),
+                              MaterialPageRoute(builder: (context) => const TestAperturaFileScreen()),
                             );
                           },
                         ),
@@ -115,9 +119,7 @@ class GestioneVariazioniScreen extends StatelessWidget {
                           onTap: () {
                             Navigator.push(
                               context,
-                              MaterialPageRoute(
-                                builder: (context) => const DichiarazioneFileVolumeScreen(),
-                              ),
+                              MaterialPageRoute(builder: (context) => const DichiarazioneFileVolumeScreen()),
                             );
                           },
                         ),
@@ -134,7 +136,7 @@ class GestioneVariazioniScreen extends StatelessWidget {
                           subtitle: 'Trattamento Dati, Archivio PDF e Popolamento',
                           onTap: () {
                             ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('Funzione non ancora implementata.')),
+                              const SnackBar(content: Text('Usa "f) Inserisci da file" o il popolamento da Master in Varia Catalogo.')),
                             );
                           },
                         ),
@@ -185,86 +187,5 @@ class GestioneVariazioniScreen extends StatelessWidget {
         ),
       ),
     );
-  }
-
-  void _showSimpleDatabaseDialog(BuildContext context) async {
-    try {
-      // Ricarica la lista dei volumi per essere sicuro sia aggiornata
-      await databaseService.synchronizeCatalogs();
-      final List<Map<String, dynamic>> volumes = await databaseService.getAvailableVolumes();
-      final Map<String, dynamic> currentVolume = await databaseService.getCurrentVolume();
-
-      showDialog(
-        context: context,
-        builder: (BuildContext context) {
-          final volumeWidgets = volumes.map<Widget>((volume) {
-            final bool isActive = volume['id'] == currentVolume['id'];
-            return ListTile(
-              leading: Icon(isActive ? Icons.folder_open : Icons.folder, color: isActive ? Colors.blue : null),
-              title: Text(volume['nome_catalogo']?.toString() ?? 'Senza nome', style: TextStyle(fontWeight: isActive ? FontWeight.bold : FontWeight.normal)),
-              subtitle: Text(volume['descrizione']?.toString() ?? ''),
-              trailing: isActive
-                  ? const Chip(
-                      label: Text('Attivo'),
-                      backgroundColor: Colors.green,
-                      labelStyle: TextStyle(color: Colors.white),
-                    )
-                  : null,
-              onTap: () {
-                Navigator.pop(context);
-                final fileName = volume['nome_file_db']?.toString() ?? '';
-                if (fileName.isNotEmpty) {
-                  _onVolumeSelected(context, fileName);
-                }
-              },
-            );
-          }).toList();
-
-          return AlertDialog(
-            title: const Text('Gestione dei Volumi'),
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Volume corrente: ${currentVolume['nome_catalogo']?.toString() ?? 'N/A'}',
-                    style: const TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 16),
-                  const Text('Seleziona un volume:'),
-                  const SizedBox(height: 8),
-                  ...volumeWidgets,
-                ],
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Annulla'),
-              ),
-            ],
-          );
-        },
-      );
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Errore: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
-    }
-  }
-
-  void _onVolumeSelected(BuildContext context, String dbFileName) async {
-    final success = await databaseService.switchVolume(dbFileName);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(success ? 'Volume cambiato a: $dbFileName' : 'Errore nel cambio volume.'),
-        backgroundColor: success ? Colors.teal[800] : Colors.red,
-      ),
-    );
-    print('Volume selezionato: $dbFileName');
   }
 }

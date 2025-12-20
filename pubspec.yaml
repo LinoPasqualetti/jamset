@@ -67,4 +67,4 @@ flutter:
 
   assets:
     - assets/images/
-    - assets/databases/
+    - assets/databases/VecchioDb.db  # AGGIUNTO: database di asset
