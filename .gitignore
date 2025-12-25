@@ -43,3 +43,9 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Backup e vecchie build
+windows_backup_*/
+windows_old_*/
+*.pdb
+*.db.bak
