@@ -8,7 +8,7 @@ class DatabaseDiagnostica {
   /// Esegue diagnostica completa sul database
   static Future<void> eseguiDiagnosticaCompleta(Database? db) async {
     debugPrint("\n" + "="*80);
-    debugPrint("🔬 DIAGNOSTICA DATABASE JAMSETGEMINI");
+    debugPrint("🔬 DIAGNOSTICA DATABASE livescore");
     debugPrint("="*80);
 
     debugPrint("Data: ${DateTime.now()}");
@@ -79,7 +79,7 @@ class DatabaseDiagnostica {
         debugPrint("   Colonne 'spartiti': ${colonne.length}");
 
         // Colonne critiche da verificare
-        final colonneCritiche = ['id_univoco_globale', 'titolo', 'autore', 'strumento', 'volume', 'ArchivioProvenienza'];
+        final colonneCritiche = ['IdBra', 'titolo', 'autore', 'strumento', 'volume', 'ArchivioProvenienza'];
         for (final col in colonneCritiche) {
           final exists = colonne.any((c) => c['name'] == col);
           debugPrint("     ${exists ? '✅' : '❌'} $col");
@@ -119,7 +119,7 @@ class DatabaseDiagnostica {
         final joinTest = await db.rawQuery("""
           SELECT COUNT(*) as c 
           FROM spartiti s 
-          LEFT JOIN spartiti_fts f ON s.id_univoco_globale = f.rowid 
+          LEFT JOIN spartiti_fts f ON s.IdBra = f.rowid 
           WHERE f.rowid IS NULL
         """);
         final missing = joinTest.first['c'] as int? ?? 0;
@@ -210,7 +210,7 @@ class DatabaseDiagnostica {
           percresto,
           '/storage/emulated/0/JamsetPDF/' || percresto || a.Volume as PerApertura
         FROM spartiti a 
-        JOIN spartiti_fts fts ON a.id_univoco_globale = fts.rowid 
+        JOIN spartiti_fts fts ON a.IdBra = fts.rowid 
         WHERE a.tipoMulti LIKE 'PD%'
           AND spartiti_fts MATCH ?
         ORDER BY a.titolo, a.strumento
@@ -256,7 +256,7 @@ class DatabaseDiagnostica {
 
         // 2. Test senza filtro tipoMulti
         final testNoFilter = await db.rawQuery(
-            "SELECT COUNT(*) as c FROM spartiti a JOIN spartiti_fts fts ON a.id_univoco_globale = fts.rowid WHERE spartiti_fts MATCH ?",
+            "SELECT COUNT(*) as c FROM spartiti a JOIN spartiti_fts fts ON a.IdBra = fts.rowid WHERE spartiti_fts MATCH ?",
             ['girl ipanema']
         );
         final countNoFilter = testNoFilter.first['c'] as int? ?? 0;
@@ -264,7 +264,7 @@ class DatabaseDiagnostica {
 
         // 3. Verifica join
         final testJoin = await db.rawQuery(
-            "SELECT COUNT(*) as c FROM spartiti WHERE id_univoco_globale IN (SELECT rowid FROM spartiti_fts WHERE spartiti_fts MATCH ?)",
+            "SELECT COUNT(*) as c FROM spartiti WHERE IdBra IN (SELECT rowid FROM spartiti_fts WHERE spartiti_fts MATCH ?)",
             ['girl ipanema']
         );
         final countJoin = testJoin.first['c'] as int? ?? 0;
@@ -302,7 +302,7 @@ class DatabaseDiagnostica {
             volume,
             ArchivioProvenienza,
             content='spartiti',
-            content_rowid='id_univoco_globale'
+            content_rowid='IdBra'
           )
         ''');
         debugPrint("   Tabella FTS creata (versione Android)");
@@ -318,7 +318,7 @@ class DatabaseDiagnostica {
             ArchivioProvenienza,
             tokenize='unicode61',
             content='spartiti',
-            content_rowid='id_univoco_globale'
+            content_rowid='IdBra'
           )
         ''');
         debugPrint("   Tabella FTS creata (versione avanzata)");
@@ -339,7 +339,7 @@ class DatabaseDiagnostica {
           await db.execute('''
             INSERT INTO spartiti_fts(rowid, titolo, autore, strumento, volume, ArchivioProvenienza)
             SELECT 
-              id_univoco_globale,
+              IdBra,
               COALESCE(titolo, ''),
               COALESCE(autore, ''),
               COALESCE(strumento, ''),
@@ -384,7 +384,7 @@ class DatabaseDiagnostica {
       await db.execute('''
         INSERT INTO spartiti_fts(rowid, titolo, autore, strumento, volume, ArchivioProvenienza)
         SELECT 
-          id_univoco_globale,
+          IdBra,
           COALESCE(titolo, ''),
           COALESCE(autore, ''),
           COALESCE(strumento, ''),

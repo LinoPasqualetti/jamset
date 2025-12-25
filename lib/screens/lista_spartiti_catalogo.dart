@@ -1,6 +1,6 @@
-﻿import 'package:flutter/material.dart';
-import 'package:jamsetgemini/main.dart';
-import 'package:jamsetgemini/utils/file_opener.dart';
+import 'package:flutter/material.dart';
+import 'package:livescore/main.dart';
+import 'package:livescore/utils/file_opener.dart';
 
 class ListaSpartitiCatalogoScreen extends StatefulWidget {
   final int catalogoId;
@@ -165,11 +165,11 @@ class _ListaSpartitiCatalogoScreenState extends State<ListaSpartitiCatalogoScree
                       children: [
                         TextSpan(text: "${item['titolo'] ?? '---'}  ", style: const TextStyle(fontWeight: FontWeight.bold)),
                         if (item['autore'] != null && item['autore'].toString().isNotEmpty)
-                          TextSpan(text: "👤${item['autore']}  ", style: const TextStyle(color: Colors.blue, fontSize: 11)),
+                          TextSpan(text: "??${item['autore']}  ", style: const TextStyle(color: Colors.blue, fontSize: 11)),
                         if (item['strumento'] != null && item['strumento'].toString().isNotEmpty)
-                          TextSpan(text: "🎺${item['strumento']}  ", style: const TextStyle(color: Colors.deepOrange, fontSize: 11)),
+                          TextSpan(text: "??${item['strumento']}  ", style: const TextStyle(color: Colors.deepOrange, fontSize: 11)),
                         if (item['ArchivioProvenienza'] != null)
-                          TextSpan(text: "📂${item['ArchivioProvenienza']}", style: TextStyle(color: Colors.grey.shade500, fontSize: 10)),
+                          TextSpan(text: "??${item['ArchivioProvenienza']}", style: TextStyle(color: Colors.grey.shade500, fontSize: 10)),
                       ],
                     ),
                   ),

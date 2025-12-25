@@ -1,10 +1,10 @@
 // lib/screens/gestione_variazioni_screen.dart
 import 'package:flutter/material.dart';
-import 'package:jamsetgemini/screens/gestione_dati_globali_screen.dart';
-import 'package:jamsetgemini/screens/test_apertura_file_screen.dart';
-import 'package:jamsetgemini/screens/dichiarazione_file_volume_screen.dart';
-import 'package:jamsetgemini/screens/elenco_volumi_catalogo_screen.dart'; // Nuova Schermata
-import 'package:jamsetgemini/screens/GestisciElencoCataloghi.dart'; // Gestione Database
+import 'package:livescore/screens/gestione_dati_globali_screen.dart';
+import 'package:livescore/screens/test_apertura_file_screen.dart';
+import 'package:livescore/screens/dichiarazione_file_volume_screen.dart';
+import 'package:livescore/screens/elenco_volumi_catalogo_screen.dart'; // Nuova Schermata
+import 'package:livescore/screens/GestisciElencoCataloghi.dart'; // Gestione Database
 
 class GestioneVariazioniScreen extends StatelessWidget {
   const GestioneVariazioniScreen({super.key});

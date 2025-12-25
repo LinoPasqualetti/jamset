@@ -1,13 +1,13 @@
-﻿// lib/screens/funzioni_variazione_dati_screen.dart - VERSIONE RIPRISTINATA ORIGINALE
+// lib/screens/funzioni_variazione_dati_screen.dart - VERSIONE RIPRISTINATA ORIGINALE
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart' as p;
 
-import 'package:jamsetgemini/main.dart';
-import 'package:jamsetgemini/platform/opener_platform_interface.dart';
-import 'package:jamsetgemini/utils/file_opener.dart';
+import 'package:livescore/main.dart';
+import 'package:livescore/platform/opener_platform_interface.dart';
+import 'package:livescore/utils/file_opener.dart';
 
 class FunzioniVariazioneDatiScreen extends StatefulWidget {
   const FunzioniVariazioneDatiScreen({super.key});
@@ -84,7 +84,8 @@ class _FunzioniVariazioneDatiScreenState extends State<FunzioniVariazioneDatiScr
         final isAdvanced = ftsOperators.any((op) => searchText.toUpperCase().contains(op));
 
         String match = isAdvanced ? searchText : '(titolo:${_processSimpleSearchTerms(searchText)}) OR (autore:${_processSimpleSearchTerms(searchText)})';
-        whereClauses.add('a.id_univoco_globale IN (SELECT rowid FROM spartiti_fts WHERE spartiti_fts MATCH ?)');
+        // MODIFICATO: Utilizzo di IdBra come chiave primaria per il join con FTS
+        whereClauses.add('a.IdBra IN (SELECT rowid FROM spartiti_fts WHERE spartiti_fts MATCH ?)');
         whereArgs.add(match);
       }
 
@@ -97,9 +98,16 @@ class _FunzioniVariazioneDatiScreenState extends State<FunzioniVariazioneDatiScr
       String where = whereClauses.isNotEmpty ? 'WHERE ${whereClauses.join(' AND ')}' : '';
       final sql = "SELECT DISTINCT a.* FROM spartiti a $where ORDER BY a.titolo COLLATE NOCASE, a.strumento LIMIT 200";
 
+      // LOG DELLA QUERY PER DEBUG
+      debugPrint('🔍 SQL ESEGUITO: $sql');
+      debugPrint('📦 PARAMETRI: $whereArgs');
+
       final dbStopwatch = Stopwatch()..start();
       final results = await databaseService.dbCatalogoAttivo!.rawQuery(sql, whereArgs);
       dbStopwatch.stop();
+
+      // LOG CONTEGGIO RISULTATI
+      debugPrint('📊 RISULTATI TROVATI: ${results.length} (in ${dbStopwatch.elapsedMilliseconds}ms)');
 
       if (mounted) {
         setState(() {
@@ -109,6 +117,7 @@ class _FunzioniVariazioneDatiScreenState extends State<FunzioniVariazioneDatiScr
         });
       }
     } catch (e) {
+      debugPrint('❌ ERRORE QUERY: $e');
       if (mounted) setState(() { _error = e.toString(); _isQueryRunning = false; });
     }
   }

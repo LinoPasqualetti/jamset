@@ -2,7 +2,7 @@
 import 'dart:io';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
-import 'package:jamsetgemini/main.dart'; // per gPercorsoPdf
+import 'package:livescore/main.dart'; // per gPercorsoPdf
 
 class PathUtils {
   static Future<String> getPlatformAppDocumentsPath() async {

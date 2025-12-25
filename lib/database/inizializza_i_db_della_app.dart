@@ -26,7 +26,7 @@ Future<String> _getDefaultSystemWidePath() async {
   final defaultPaths = {
     'android': '/storage/emulated/0/JamsetPDF/',
     'windows': r'C:\\JamsetPDF\\',
-    'linux': '/var/lib/jamsetgemini/pdf/',
+    'linux': '/var/lib/livescore/pdf/',
     'macos': '/Library/Application Support/JamsetPDF/',
   };
 
@@ -91,10 +91,13 @@ Future<String> _getPlatformCorrectedPdfPath(String percorsoOriginale) async {
 Future<void> _creaTabellaSpartiti(Database db) async {
   debugPrint("🏗️  Creazione tabella spartiti...");
 
-  await db.execute('''
+  /// Crea la tabella spartiti con struttura corretta
+  Future<void> _creaTabellaSpartiti(Database db) async {
+    debugPrint("🏗️  Creazione tabella spartiti...");
+
+    await db.execute('''
     CREATE TABLE IF NOT EXISTS spartiti (
-      id_univoco_globale INTEGER PRIMARY KEY AUTOINCREMENT,
-      IdBra TEXT UNIQUE NOT NULL,
+      IdBra INTEGER PRIMARY KEY,  -- MODIFICATO: IdBra è la PK, INTEGER, no AUTOINCREMENT
       titolo TEXT,
       autore TEXT,
       strumento TEXT,
@@ -137,7 +140,7 @@ Future<void> _creaIndiciFTS(Database db) async {
     await db.execute('''
       CREATE TRIGGER IF NOT EXISTS spartiti_ai_fts AFTER INSERT ON spartiti BEGIN
         INSERT INTO spartiti_fts(rowid, titolo, autore, volume, ArchivioProvenienza)
-        VALUES (NEW.id_univoco_globale, NEW.titolo, NEW.autore, NEW.volume, NEW.ArchivioProvenienza);
+        VALUES (NEW.IdBra, NEW.titolo, NEW.autore, NEW.volume, NEW.ArchivioProvenienza);
       END;
     ''');
 
@@ -148,13 +151,13 @@ Future<void> _creaIndiciFTS(Database db) async {
             autore = NEW.autore, 
             volume = NEW.volume, 
             ArchivioProvenienza = NEW.ArchivioProvenienza
-        WHERE rowid = OLD.id_univoco_globale;
+        WHERE rowid = OLD.IdBra;
       END;
     ''');
 
     await db.execute('''
       CREATE TRIGGER IF NOT EXISTS spartiti_ad_fts AFTER DELETE ON spartiti BEGIN
-        DELETE FROM spartiti_fts WHERE rowid = OLD.id_univoco_globale;
+        DELETE FROM spartiti_fts WHERE rowid = OLD.IdBra;
       END;
     ''');
 
@@ -172,7 +175,7 @@ Future<void> _creaIndiciFTS(Database db) async {
           volume,
           ArchivioProvenienza,
           content='spartiti',
-          content_rowid='id_univoco_globale'
+          content_rowid='IdBra'
         )
       ''');
       debugPrint("     ✅ Tabella FTS creata con content (popolamento automatico)");
@@ -220,158 +223,158 @@ Future<void> _eliminaFTSCompleto(Database db) async {
 }
 
 /// Verifica e sincronizza FTS se necessario
-Future<void> _verificaESincronizzaFTS(Database db) async {
-  try {
-    debugPrint("🔍 Verifica sincronizzazione FTS...");
 
-    // 1. Verifica trigger FTS
-    final triggerFTS = await db.rawQuery(
-        "SELECT name FROM sqlite_master WHERE type='trigger' AND name LIKE '%fts%'"
-    );
+  Future<void> _verificaESincronizzaFTS(Database db) async {
+    try {
+      debugPrint("🔍 Verifica sincronizzazione FTS...");
 
-    if (triggerFTS.isEmpty) {
-      debugPrint("❌ Trigger FTS mancanti! Ricostruisco sistema completo...");
-      await _eliminaFTSCompleto(db);
-      await _creaIndiciFTS(db);
+      // 1. Verifica trigger FTS
+      final triggerFTS = await db.rawQuery(
+          "SELECT name FROM sqlite_master WHERE type='trigger' AND name LIKE '%fts%'"
+      );
 
-      // Riconta per popolare manualmente
-      final countSpartiti = await db.rawQuery("SELECT COUNT(*) as c FROM spartiti");
-      final totalSpartiti = countSpartiti.first['c'] as int? ?? 0;
+      if (triggerFTS.isEmpty) {
+        debugPrint("❌ Trigger FTS mancanti! Ricostruisco sistema completo...");
+        await _eliminaFTSCompleto(db);
+        await _creaIndiciFTS(db);
 
-      if (totalSpartiti > 0) {
-        debugPrint("🔄 Popolamento manuale FTS per \$totalSpartiti record...");
-        await db.execute('''
-          INSERT INTO spartiti_fts(rowid, titolo, autore, volume, ArchivioProvenienza)
+        // Riconta per popolare manualmente
+        final countSpartiti = await db.rawQuery("SELECT COUNT(*) as c FROM spartiti");
+        final totalSpartiti = countSpartiti.first['c'] as int? ?? 0;
+
+        if (totalSpartiti > 0) {
+          debugPrint("🔄 Popolamento manuale FTS per \$totalSpartiti record...");
+          await db.execute('''
+          INSERT INTO spartiti_fts(IdBra, titolo, autore, volume, ArchivioProvenienza)  -- MODIFICATO
           SELECT 
-            id_univoco_globale,
+            IdBra,  -- MODIFICATO
             COALESCE(titolo, ''),
             COALESCE(autore, ''),
             COALESCE(volume, ''),
             COALESCE(ArchivioProvenienza, '')
           FROM spartiti
         ''');
+        }
+
+        return;
       }
 
-      return;
-    }
+      debugPrint("✅ Trigger FTS trovati: \${triggerFTS.length}");
 
-    debugPrint("✅ Trigger FTS trovati: \${triggerFTS.length}");
+      // 2. Conta record in spartiti
+      final countSpartiti = await db.rawQuery("SELECT COUNT(*) as c FROM spartiti");
+      final totalSpartiti = countSpartiti.first['c'] as int? ?? 0;
 
-    // 2. Conta record in spartiti
-    final countSpartiti = await db.rawQuery("SELECT COUNT(*) as c FROM spartiti");
-    final totalSpartiti = countSpartiti.first['c'] as int? ?? 0;
+      // 3. Conta record in FTS
+      final countFTS = await db.rawQuery("SELECT COUNT(*) as c FROM spartiti_fts");
+      final totalFTS = countFTS.first['c'] as int? ?? 0;
 
-    // 3. Conta record in FTS
-    final countFTS = await db.rawQuery("SELECT COUNT(*) as c FROM spartiti_fts");
-    final totalFTS = countFTS.first['c'] as int? ?? 0;
+      debugPrint("   Record spartiti: \$totalSpartiti");
+      debugPrint("   Record FTS: \$totalFTS");
 
-    debugPrint("   Record spartiti: \$totalSpartiti");
-    debugPrint("   Record FTS: \$totalFTS");
+      if (totalSpartiti == 0) {
+        debugPrint("   ⚠️ Tabella spartiti vuota, FTS non necessario");
+        return;
+      }
 
-    if (totalSpartiti == 0) {
-      debugPrint("   ⚠️ Tabella spartiti vuota, FTS non necessario");
-      return;
-    }
-
-    if (totalFTS == 0) {
-      debugPrint("   🔄 FTS vuoto, popolo manualmente...");
-      await db.execute('''
-        INSERT INTO spartiti_fts(rowid, titolo, autore, volume, ArchivioProvenienza)
+      if (totalFTS == 0) {
+        debugPrint("   🔄 FTS vuoto, popolo manualmente...");
+        await db.execute('''
+        INSERT INTO spartiti_fts(IdBra, titolo, autore, volume, ArchivioProvenienza)  -- MODIFICATO
         SELECT 
-          id_univoco_globale,
+          IdBra,  -- MODIFICATO
           COALESCE(titolo, ''),
           COALESCE(autore, ''),
           COALESCE(volume, ''),
           COALESCE(ArchivioProvenienza, '')
         FROM spartiti
       ''');
-      debugPrint("     ✅ FTS popolato manualmente");
+        debugPrint("     ✅ FTS popolato manualmente");
 
-    } else if (totalFTS != totalSpartiti) {
-      debugPrint("   🔄 FTS non sincronizzato (\$totalFTS/\$totalSpartiti), risincronizzo...");
-      await _eliminaFTSCompleto(db);
-      await _creaIndiciFTS(db);
-
-      await db.execute('''
-        INSERT INTO spartiti_fts(rowid, titolo, autore, volume, ArchivioProvenienza)
-        SELECT 
-          id_univoco_globale,
-          COALESCE(titolo, ''),
-          COALESCE(autore, ''),
-          COALESCE(volume, ''),
-          COALESCE(ArchivioProvenienza, '')
-        FROM spartiti
-      ''');
-      debugPrint("     ✅ FTS risincronizzato");
-
-    } else {
-      debugPrint("   ✅ FTS conteggio OK");
-
-      // 4. Verifica QUALITÀ sincronizzazione (controlla differenze)
-      debugPrint("   🔍 Verifica qualità sincronizzazione...");
-      final differenze = await db.rawQuery('''
-        SELECT COUNT(*) as c FROM spartiti s
-        WHERE NOT EXISTS (
-          SELECT 1 FROM spartiti_fts f 
-          WHERE f.rowid = s.id_univoco_globale
-        )
-      ''');
-
-      final diffCount = differenze.first['c'] as int? ?? 0;
-      if (diffCount > 0) {
-        debugPrint("   ⚠️ \$diffCount record non sincronizzati! Ricostruisco...");
+      } else if (totalFTS != totalSpartiti) {
+        debugPrint("   🔄 FTS non sincronizzato (\$totalFTS/\$totalSpartiti), risincronizzo...");
         await _eliminaFTSCompleto(db);
         await _creaIndiciFTS(db);
 
         await db.execute('''
-          INSERT INTO spartiti_fts(rowid, titolo, autore, volume, ArchivioProvenienza)
-          SELECT 
-            id_univoco_globale,
-            COALESCE(titolo, ''),
-            COALESCE(autore, ''),
-            COALESCE(volume, ''),
-            COALESCE(ArchivioProvenienza, '')
-          FROM spartiti
-        ''');
-        debugPrint("     ✅ FTS ricostruito per qualità");
+        INSERT INTO spartiti_fts(IdBra, titolo, autore, volume, ArchivioProvenienza)  -- MODIFICATO
+        SELECT 
+          IdBra,  -- MODIFICATO
+          COALESCE(titolo, ''),
+          COALESCE(autore, ''),
+          COALESCE(volume, ''),
+          COALESCE(ArchivioProvenienza, '')
+        FROM spartiti
+      ''');
+        debugPrint("     ✅ FTS risincronizzato");
+
       } else {
-        debugPrint("   ✅ FTS perfettamente sincronizzato");
-      }
-    }
+        debugPrint("   ✅ FTS conteggio OK");
 
-    // Test rapido FTS
-    await _testFTSRapido(db);
+        // 4. Verifica QUALITÀ sincronizzazione (controlla differenze)
+        debugPrint("   🔍 Verifica qualità sincronizzazione...");
+        final differenze = await db.rawQuery('''
+        SELECT COUNT(*) as c FROM spartiti s
+        WHERE NOT EXISTS (
+          SELECT 1 FROM spartiti_fts f 
+          WHERE f.IdBra = s.IdBra  -- MODIFICATO
+        )
+      ''');
 
-  } catch (e) {
-    debugPrint("❌ Errore verifica FTS: \$e");
-    // Se c'è errore, ricostruisci completamente
-    try {
-      await _eliminaFTSCompleto(db);
-      await _creaIndiciFTS(db);
+        final diffCount = differenze.first['c'] as int? ?? 0;
+        if (diffCount > 0) {
+          debugPrint("   ⚠️ \$diffCount record non sincronizzati! Ricostruisco...");
+          await _eliminaFTSCompleto(db);
+          await _creaIndiciFTS(db);
 
-      final countSpartiti = await db.rawQuery("SELECT COUNT(*) as c FROM spartiti");
-      final totalSpartiti = countSpartiti.first['c'] as int? ?? 0;
-
-      if (totalSpartiti > 0) {
-        await db.execute('''
-          INSERT INTO spartiti_fts(rowid, titolo, autore, volume, ArchivioProvenienza)
+          await db.execute('''
+          INSERT INTO spartiti_fts(IdBra, titolo, autore, volume, ArchivioProvenienza)  -- MODIFICATO
           SELECT 
-            id_univoco_globale,
+            IdBra,  -- MODIFICATO
             COALESCE(titolo, ''),
             COALESCE(autore, ''),
             COALESCE(volume, ''),
             COALESCE(ArchivioProvenienza, '')
           FROM spartiti
         ''');
+          debugPrint("     ✅ FTS ricostruito per qualità");
+        } else {
+          debugPrint("   ✅ FTS perfettamente sincronizzato");
+        }
       }
 
-      debugPrint("✅ FTS ricostruito dopo errore");
-    } catch (e2) {
-      debugPrint("❌ Errore critico ricostruzione FTS: \$e2");
+      // Test rapido FTS
+      await _testFTSRapido(db);
+
+    } catch (e) {
+      debugPrint("❌ Errore verifica FTS: \$e");
+      // Se c'è errore, ricostruisci completamente
+      try {
+        await _eliminaFTSCompleto(db);
+        await _creaIndiciFTS(db);
+
+        final countSpartiti = await db.rawQuery("SELECT COUNT(*) as c FROM spartiti");
+        final totalSpartiti = countSpartiti.first['c'] as int? ?? 0;
+
+        if (totalSpartiti > 0) {
+          await db.execute('''
+          INSERT INTO spartiti_fts(IdBra, titolo, autore, volume, ArchivioProvenienza)  -- MODIFICATO
+          SELECT 
+            IdBra,  -- MODIFICATO
+            COALESCE(titolo, ''),
+            COALESCE(autore, ''),
+            COALESCE(volume, ''),
+            COALESCE(ArchivioProvenienza, '')
+          FROM spartiti
+        ''');
+        }
+
+        debugPrint("✅ FTS ricostruito dopo errore");
+      } catch (e2) {
+        debugPrint("❌ Errore critico ricostruzione FTS: \$e2");
+      }
     }
   }
-}
-
 /// Test rapido per verificare che FTS funzioni
 Future<void> _testFTSRapido(Database db) async {
   try {
@@ -404,94 +407,109 @@ Future<void> _testFTSRapido(Database db) async {
 }
 
 /// Importa dati dal database asset nella tabella spartiti
-Future<int> _importaDatiDaAsset(Database db) async {
-  debugPrint("📥 Importazione dati da database asset...");
-
-  try {
-    // 1. Carica il DB master dagli assets
-    final ByteData data = await rootBundle.load('assets/databases/\$_vecchioDbName');
-    final tempAssetDbPath = p.join((await getTemporaryDirectory()).path, "vecchio_master_temp.db");
-    await File(tempAssetDbPath).writeAsBytes(data.buffer.asUint8List(), flush: true);
-
-    Database? masterDb;
-    int recordImportati = 0;
+  Future<int> _importaDatiDaAsset(Database db) async {
+    debugPrint("📥 Importazione dati da database asset...");
 
     try {
-      // 2. Apri DB master
-      masterDb = await openReadOnlyDatabase(tempAssetDbPath);
+      // 1. Carica il DB master dagli assets
+      final ByteData data = await rootBundle.load('assets/databases/\$_vecchioDbName');
+      final tempAssetDbPath = p.join((await getTemporaryDirectory()).path, "vecchio_master_temp.db");
+      await File(tempAssetDbPath).writeAsBytes(data.buffer.asUint8List(), flush: true);
 
-      // 3. Determina tabella sorgente in base al SO
-      final sourceTable = Platform.isWindows ? 'spartiti' : 'spartiti_andr';
-      debugPrint("   Tabella sorgente: '\$sourceTable'");
+      Database? masterDb;
+      int recordImportati = 0;
 
-      // 4. Leggi i dati dalla tabella corretta
-      List<Map<String, dynamic>> dataToInsert;
       try {
-        dataToInsert = await masterDb.query(sourceTable);
-      } catch (e) {
-        debugPrint("   ⚠️ Tabella '\$sourceTable' non trovata, prova fallback...");
-        // Fallback all'altra tabella
-        final fallbackTable = Platform.isWindows ? 'spartiti_andr' : 'spartiti';
-        dataToInsert = await masterDb.query(fallbackTable);
-      }
+        // 2. Apri DB master
+        masterDb = await openReadOnlyDatabase(tempAssetDbPath);
 
-      debugPrint("   Letti \${dataToInsert.length} record da asset");
+        // 3. Determina tabella sorgente in base al SO
+        final sourceTable = Platform.isWindows ? 'spartiti' : 'spartiti_andr';
+        debugPrint("   Tabella sorgente: '\$sourceTable'");
 
-      if (dataToInsert.isEmpty) {
-        debugPrint("   ⚠️ Nessun dato trovato nella tabella");
-        return 0;
-      }
+        // 4. Leggi i dati dalla tabella corretta
+        List<Map<String, dynamic>> dataToInsert;
+        try {
+          dataToInsert = await masterDb.query(sourceTable);
+        } catch (e) {
+          debugPrint("   ⚠️ Tabella '\$sourceTable' non trovata, prova fallback...");
+          // Fallback all'altra tabella
+          final fallbackTable = Platform.isWindows ? 'spartiti_andr' : 'spartiti';
+          dataToInsert = await masterDb.query(fallbackTable);
+        }
 
-      // 5. Inserisci dati in blocchi (i trigger popoleranno automaticamente FTS)
-      final chunkSize = 100;
-      for (var i = 0; i < dataToInsert.length; i += chunkSize) {
-        final end = (i + chunkSize < dataToInsert.length) ? i + chunkSize : dataToInsert.length;
-        final chunk = dataToInsert.sublist(i, end);
+        debugPrint("   Letti \${dataToInsert.length} record da asset");
 
-        await db.transaction((txn) async {
-          final batch = txn.batch();
-          for (final row in chunk) {
-            // Assicurati che id_univoco_globale sia presente
-            final rowCopy = Map<String, dynamic>.from(row);
-            if (!rowCopy.containsKey('id_univoco_globale')) {
-              rowCopy['id_univoco_globale'] = null; // AUTOINCREMENT gestirà
+        if (dataToInsert.isEmpty) {
+          debugPrint("   ⚠️ Nessun dato trovato nella tabella");
+          return 0;
+        }
+
+        // 5. Inserisci dati in blocchi (i trigger popoleranno automaticamente FTS)
+        final chunkSize = 100;
+        for (var i = 0; i < dataToInsert.length; i += chunkSize) {
+          final end = (i + chunkSize < dataToInsert.length) ? i + chunkSize : dataToInsert.length;
+          final chunk = dataToInsert.sublist(i, end);
+
+          await db.transaction((txn) async {
+            final batch = txn.batch();
+            for (final row in chunk) {
+              // MODIFICATO: Gestisci IdBra e rimuovi id_univoco_globale
+              final rowCopy = Map<String, dynamic>.from(row);
+
+              // 1. Converti IdBra TEXT -> INTEGER se possibile
+              if (rowCopy.containsKey('IdBra')) {
+                final idBraValue = rowCopy['IdBra'];
+                if (idBraValue is String && idBraValue.isNotEmpty) {
+                  final parsed = int.tryParse(idBraValue);
+                  if (parsed != null) {
+                    rowCopy['IdBra'] = parsed;
+                  } else {
+                    // Se non è numerico, usa hash o rimuovi (genererà nuovo ID)
+                    debugPrint("   ⚠️ IdBra non numerico: '\$idBraValue', genero nuovo ID");
+                    rowCopy.remove('IdBra');
+                  }
+                }
+              }
+
+              // 2. Rimuovi id_univoco_globale (non più usato)
+              rowCopy.remove('id_univoco_globale');
+
+              batch.insert('spartiti', rowCopy,
+                  conflictAlgorithm: ConflictAlgorithm.replace);
             }
+            await batch.commit(noResult: true);
+          });
 
-            batch.insert('spartiti', rowCopy,
-                conflictAlgorithm: ConflictAlgorithm.replace);
+          recordImportati += chunk.length;
+
+          // Progresso
+          if (i % 500 == 0) {
+            final progress = ((i / dataToInsert.length) * 100).toStringAsFixed(1);
+            debugPrint("   Progresso: \$progress% (\$recordImportati record)");
+            await Future.delayed(Duration.zero);
           }
-          await batch.commit(noResult: true);
-        });
+        }
 
-        recordImportati += chunk.length;
+        debugPrint("✅ Importati \$recordImportati record da asset");
+        debugPrint("   ℹ️  I trigger hanno popolato automaticamente l'FTS");
 
-        // Progresso
-        if (i % 500 == 0) {
-          final progress = ((i / dataToInsert.length) * 100).toStringAsFixed(1);
-          debugPrint("   Progresso: \$progress% (\$recordImportati record)");
-          await Future.delayed(Duration.zero);
+        return recordImportati;
+
+      } finally {
+        await masterDb?.close();
+        try {
+          await deleteDatabase(tempAssetDbPath);
+        } catch (e) {
+          // Ignora errori di cancellazione
         }
       }
 
-      debugPrint("✅ Importati \$recordImportati record da asset");
-      debugPrint("   ℹ️  I trigger hanno popolato automaticamente l'FTS");
-
-      return recordImportati;
-
-    } finally {
-      await masterDb?.close();
-      try {
-        await deleteDatabase(tempAssetDbPath);
-      } catch (e) {
-        // Ignora errori di cancellazione
-      }
+    } catch (e) {
+      debugPrint("❌ Errore importazione dati: \$e");
+      return 0;
     }
-
-  } catch (e) {
-    debugPrint("❌ Errore importazione dati: \$e");
-    return 0;
   }
-}
 
 /// ===================================================================
 /// 3. GESTIONE DB GLOBALE
@@ -520,7 +538,83 @@ Future<void> _creaDbGlobaleVuoto(Database db, int version) async {
 
   debugPrint("✅ Struttura DBGlobale creata (v\$version)");
 }
+  /// Migrazione per database esistenti (versione 1 -> versione 2)
+  Future<void> _migraDatabaseVersione2(Database db) async {
+    debugPrint("🔄 Avvio migrazione database a versione 2...");
 
+    try {
+      // 1. Backup della tabella esistente
+      await db.execute('CREATE TABLE IF NOT EXISTS spartiti_backup_mig AS SELECT * FROM spartiti');
+
+      // 2. Elimina FTS esistente
+      await _eliminaFTSCompleto(db);
+
+      // 3. Elimina tabella spartiti vecchia
+      await db.execute('DROP TABLE IF EXISTS spartiti');
+
+      // 4. Crea nuova tabella con IdBra come PK
+      await _creaTabellaSpartiti(db);
+
+      // 5. Ripristina dati convertendo IdBra
+      final datiBackup = await db.rawQuery('SELECT * FROM spartiti_backup_mig');
+
+      if (datiBackup.isNotEmpty) {
+        debugPrint("   🔄 Ripristino \${datiBackup.length} record...");
+
+        for (final row in datiBackup) {
+          final rowCopy = Map<String, dynamic>.from(row);
+
+          // Converti IdBra
+          if (rowCopy.containsKey('IdBra')) {
+            final idBraValue = rowCopy['IdBra'];
+            if (idBraValue is String && idBraValue.isNotEmpty) {
+              final parsed = int.tryParse(idBraValue);
+              if (parsed != null) {
+                rowCopy['IdBra'] = parsed;
+              } else {
+                rowCopy.remove('IdBra');
+              }
+            }
+          }
+
+          // Rimuovi id_univoco_globale
+          rowCopy.remove('id_univoco_globale');
+
+          await db.insert('spartiti', rowCopy,
+              conflictAlgorithm: ConflictAlgorithm.replace);
+        }
+      }
+
+      // 6. Crea nuovo sistema FTS
+      await _creaIndiciFTS(db);
+
+      // 7. Popola FTS
+      final countSpartiti = await db.rawQuery("SELECT COUNT(*) as c FROM spartiti");
+      final totalSpartiti = countSpartiti.first['c'] as int? ?? 0;
+
+      if (totalSpartiti > 0) {
+        await db.execute('''
+        INSERT INTO spartiti_fts(IdBra, titolo, autore, volume, ArchivioProvenienza)
+        SELECT 
+          IdBra,
+          COALESCE(titolo, ''),
+          COALESCE(autore, ''),
+          COALESCE(volume, ''),
+          COALESCE(ArchivioProvenienza, '')
+        FROM spartiti
+      ''');
+      }
+
+      // 8. Elimina backup
+      await db.execute('DROP TABLE IF EXISTS spartiti_backup_mig');
+
+      debugPrint("✅ Migrazione completata con successo");
+
+    } catch (e) {
+      debugPrint("❌ Errore durante migrazione: \$e");
+      rethrow;
+    }
+  }
 /// Inizializza DBGlobale con valori predefiniti
 Future<void> _inizializzaDbGlobale(Database db) async {
   final percorsoDefault = await _getDefaultSystemWidePath();

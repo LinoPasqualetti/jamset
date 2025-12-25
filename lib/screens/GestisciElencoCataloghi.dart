@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:jamsetgemini/main.dart'; // Importa databaseService
+import 'package:livescore/main.dart'; // Importa databaseService
 import 'VariaCatalogo.dart';
 
 class GestisciElencoCataloghi extends StatefulWidget {

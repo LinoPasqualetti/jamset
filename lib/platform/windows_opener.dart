@@ -1,7 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:jamsetgemini/main.dart'; // Importa main.dart per accedere alla configurazione
-import 'package:jamsetgemini/platform/opener_platform_interface.dart';
+import 'package:livescore/main.dart'; // Importa main.dart per accedere alla configurazione
+import 'package:livescore/platform/opener_platform_interface.dart';
 import 'package:path/path.dart' as p;
 import 'package:url_launcher/url_launcher.dart'; // Importa il pacchetto url_launcher
 

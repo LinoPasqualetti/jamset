@@ -1,10 +1,10 @@
 // lib/screens/main_screen.dart
 import 'package:flutter/material.dart';
-import 'package:jamsetgemini/screens/csv_viewer_screen.dart';
-import 'package:jamsetgemini/screens/funzioni_variazione_dati_screen.dart';
-import 'package:jamsetgemini/screens/gestione_variazioni_screen.dart';
-import 'package:jamsetgemini/services/database_service.dart';
-import 'package:jamsetgemini/main.dart'; // Per accedere a databaseService globale
+import 'package:livescore/screens/csv_viewer_screen.dart';
+import 'package:livescore/screens/funzioni_variazione_dati_screen.dart';
+import 'package:livescore/screens/gestione_variazioni_screen.dart';
+import 'package:livescore/services/database_service.dart';
+import 'package:livescore/main.dart'; // Per accedere a databaseService globale
 
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
@@ -209,7 +209,7 @@ class _HomePageState extends State<HomePage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Jamset Gemini', style: TextStyle(color: Colors.yellowAccent, fontWeight: FontWeight.bold)),
+        title: const Text('Live Score', style: TextStyle(color: Colors.yellowAccent, fontWeight: FontWeight.bold)),
         backgroundColor: Colors.blueGrey[700],
         actions: [
           IconButton(

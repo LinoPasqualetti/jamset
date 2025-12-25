@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:jamsetgemini/main.dart';
-import 'package:jamsetgemini/screens/GestisciElencoCataloghi.dart';
-import 'package:jamsetgemini/screens/variazione_dati_generali_screen.dart';
+import 'package:livescore/main.dart';
+import 'package:livescore/screens/GestisciElencoCataloghi.dart';
+import 'package:livescore/screens/variazione_dati_generali_screen.dart';
 
 class GestioneDatiGlobaliScreen extends StatelessWidget {
   const GestioneDatiGlobaliScreen({super.key});

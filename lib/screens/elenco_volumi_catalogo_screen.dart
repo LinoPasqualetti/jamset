@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:jamsetgemini/main.dart'; 
-import 'package:jamsetgemini/screens/lista_spartiti_catalogo.dart';
+import 'package:livescore/main.dart'; 
+import 'package:livescore/screens/lista_spartiti_catalogo.dart';
 
 class ElencoVolumiCatalogoScreen extends StatefulWidget {
   const ElencoVolumiCatalogoScreen({super.key});
@@ -33,7 +33,8 @@ class _ElencoVolumiCatalogoScreenState extends State<ElencoVolumiCatalogoScreen>
     try {
       if (databaseService.dbCatalogoAttivo == null) return;
 
-      String query = "SELECT * FROM spartiti WHERE tipodocu = 'V'";
+      // MODIFICATO: aggiunto filtro IdBra = IdVolume per isolare i record che rappresentano i volumi "padre"
+      String query = "SELECT * FROM spartiti WHERE tipodocu = 'V' AND IdBra = IdVolume";
       List<dynamic> args = [];
       if (filter != null && filter.isNotEmpty) {
         query += " AND (volume LIKE ? OR titolo LIKE ? OR ArchivioProvenienza LIKE ?)";
@@ -75,7 +76,7 @@ class _ElencoVolumiCatalogoScreenState extends State<ElencoVolumiCatalogoScreen>
       }
       final confirmed = await showDialog<bool>(context: context, builder: (c) => AlertDialog(title: const Text('Elimina?'), content: Text('Vuoi eliminare "$nomeVolume"?'), actions: [TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('NO')), TextButton(onPressed: () => Navigator.pop(c, true), child: const Text('SI'))])) ?? false;
       if (confirmed) {
-        await databaseService.dbCatalogoAttivo!.delete('spartiti', where: 'id_univoco_globale = ?', whereArgs: [volume['id_univoco_globale']]);
+        await databaseService.dbCatalogoAttivo!.delete('spartiti', where: 'IdBra = ?', whereArgs: [volume['IdBra']]);
         _loadVolumi(_searchController.text);
       }
     } catch (_) {}

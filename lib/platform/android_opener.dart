@@ -1,8 +1,8 @@
-﻿/// lib/platform/android_opener.dart
+/// lib/platform/android_opener.dart
 import 'package:flutter/material.dart';
-import 'package:jamsetgemini/main.dart'; // Importa main.dart per accedere alla navigatorKey globale
-import 'package:jamsetgemini/platform/opener_platform_interface.dart';
-import 'package:jamsetgemini/screens/pdf_viewer_android_screen.dart';
+import 'package:livescore/main.dart'; // Importa main.dart per accedere alla navigatorKey globale
+import 'package:livescore/platform/opener_platform_interface.dart';
+import 'package:livescore/screens/pdf_viewer_android_screen.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 class AndroidOpener implements OpenerPlatformInterface {
@@ -17,7 +17,7 @@ class AndroidOpener implements OpenerPlatformInterface {
 
     try {
       // FIX: Richiede il permesso corretto, MANAGE_EXTERNAL_STORAGE, che corrisponde
-      // a quello dichiarato in AndroidManifest.xml per la massima compatibilità.
+      // a quello dichiarato in AndroidManifest.xml per la massima compatibilit�.
       var status = await Permission.manageExternalStorage.status;
       if (!status.isGranted) {
         print("Permesso MANAGE_EXTERNAL_STORAGE non concesso. Lo richiedo...");

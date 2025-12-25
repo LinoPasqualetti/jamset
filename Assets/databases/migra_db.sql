@@ -24,8 +24,7 @@ BEGIN TRANSACTION;
 
 -- 4. CREA NUOVA TABELLA spartiti (se serve)
 CREATE TABLE IF NOT EXISTS spartiti_temp (
-    id_univoco_globale INTEGER PRIMARY KEY AUTOINCREMENT,
-    IdBra TEXT UNIQUE NOT NULL,
+    IdBra INTEGER PRIMARY KEY AUTOINCREMENT,
     titolo TEXT,
     autore TEXT,
     strumento TEXT,
@@ -67,7 +66,7 @@ CREATE VIRTUAL TABLE spartiti_fts USING fts5(
     volume,
     ArchivioProvenienza,
     content='spartiti',
-    content_rowid='id_univoco_globale'
+    content_rowid='IdBra'
 );
 
 -- 9. ELIMINA TRIGGERS VECCHI
@@ -80,7 +79,7 @@ CREATE TRIGGER spartiti_ai_fts AFTER INSERT ON spartiti
 BEGIN
     INSERT INTO spartiti_fts(rowid, titolo, autore, volume, ArchivioProvenienza)
     VALUES (
-        new.id_univoco_globale,
+        new.IdBra,
         COALESCE(new.titolo, ''),
         COALESCE(new.autore, ''),
         COALESCE(new.volume, ''),
@@ -95,18 +94,18 @@ BEGIN
         autore = COALESCE(new.autore, ''),
         volume = COALESCE(new.volume, ''),
         ArchivioProvenienza = COALESCE(new.ArchivioProvenienza, '')
-    WHERE rowid = old.id_univoco_globale;
+    WHERE rowid = old.IdBra;
 END;
 
 CREATE TRIGGER spartiti_ad_fts AFTER DELETE ON spartiti
 BEGIN
-    DELETE FROM spartiti_fts WHERE rowid = old.id_univoco_globale;
+    DELETE FROM spartiti_fts WHERE rowid = old.IdBra;
 END;
 
 -- 11. POPOLA FTS CON DATI ESISTENTI
 INSERT INTO spartiti_fts(rowid, titolo, autore, volume, ArchivioProvenienza)
 SELECT 
-    id_univoco_globale,
+    IdBra,
     COALESCE(titolo, ''),
     COALESCE(autore, ''),
     COALESCE(volume, ''),

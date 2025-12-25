@@ -6,9 +6,9 @@ import 'package:csv/csv.dart';
 import 'dart:convert';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:path/path.dart' as p;
-import 'package:jamsetgemini/main.dart';
-import 'package:jamsetgemini/platform/opener_platform_interface.dart';
-import 'package:jamsetgemini/utils/file_opener.dart';
+import 'package:livescore/main.dart';
+import 'package:livescore/platform/opener_platform_interface.dart';
+import 'package:livescore/utils/file_opener.dart';
 
 class CsvViewerScreen extends StatefulWidget {
   const CsvViewerScreen({super.key});

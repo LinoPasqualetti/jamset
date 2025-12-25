@@ -1,8 +1,8 @@
-﻿import 'dart:io';
+import 'dart:io';
 import 'package:path/path.dart' as p;
 import 'package:flutter/material.dart';
-import 'package:jamsetgemini/main.dart'; // Per accedere a databaseService
-import 'package:jamsetgemini/platform/opener_platform_interface.dart';
+import 'package:livescore/main.dart'; // Per accedere a databaseService
+import 'package:livescore/platform/opener_platform_interface.dart';
 
 class FileOpener {
   /// Apre un file (PDF o qualsiasi altro tipo)
@@ -14,22 +14,20 @@ class FileOpener {
     int page = 1,
   })
   async {
-    debugPrint('📂 FILE OPENER - Accesso Diretto al Service');
+    debugPrint('?? FILE OPENER - Accesso Diretto al Service');
 
     // 1. Leggi il percorso base DIRETTAMENTE dal DatabaseService
-    // Questo evita di dipendere da variabili globali che potrebbero non essere rinfrescate
     String cleanBase = databaseService.percorsoPdf.trim();
     String cleanResto = percResto.trim();
 
     // Fallback di sicurezza estrema
     if (cleanBase.isEmpty) {
-      debugPrint('⚠️ ERRORE: percorsoPdf nel service è VUOTO. Tento recupero da gPercorsoPdf.');
+      debugPrint('?? ERRORE: percorsoPdf nel service è VUOTO. Tento recupero da gPercorsoPdf.');
       cleanBase = gPercorsoPdf.trim();
     }
 
-    // Se è ancora vuoto, il sistema non è configurato
     if (cleanBase.isEmpty) {
-      debugPrint('❌ ERRORE FATALE: Nessun percorso PDF configurato nel sistema.');
+      debugPrint('? ERRORE FATALE: Nessun percorso PDF configurato nel sistema.');
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -64,42 +62,65 @@ class FileOpener {
 
     // 4. Verifica esistenza e apertura
     try {
-      final file = File(fullPath);
-      if (await file.exists()) {
-        debugPrint('✅ File trovato. Apertura in corso...');
-        await OpenerPlatformInterface.instance.openPdf(
-          context: context,
-          filePath: fullPath,
-          page: page,
-        );
-      } else {
-        debugPrint('❌ File NON trovato in: $fullPath');
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Impossibile trovare il file:\n$volume'),
-              backgroundColor: Colors.orange,
-              duration: const Duration(seconds: 5),
-              action: SnackBarAction(
-                label: 'DETTAGLI',
-                onPressed: () {
-                  showDialog(
-                    context: context,
-                    builder: (c) => AlertDialog(
-                      title: const Text('Dettaglio Percorso'),
-                      content: SelectableText('Percorso cercato:\n$fullPath'),
-                      actions: [TextButton(onPressed: () => Navigator.pop(c), child: const Text('CHIUDI'))],
-                    ),
-                  );
-                },
-              ),
-            ),
+      final fileType = await FileSystemEntity.type(fullPath);
+      
+      if (fileType != FileSystemEntityType.notFound) {
+        debugPrint('? Elemento trovato ($fileType). Apertura in corso...');
+        
+        if (fileType == FileSystemEntityType.directory) {
+          // Se è una directory, apriamo con il file manager (su Windows)
+          await _openDirectory(fullPath);
+        } else {
+          // Se è un file, apriamo con il visualizzatore
+          // Se page è 0 o null, lo passiamo come 1 o evitiamo il parametro se il visualizzatore lo permette
+          int effectivePage = (page <= 0) ? 1 : page;
+          
+          await OpenerPlatformInterface.instance.openPdf(
+            context: context,
+            filePath: fullPath,
+            page: effectivePage,
           );
+        }
+      } else {
+        debugPrint('? File NON trovato in: $fullPath');
+        if (context.mounted) {
+          _showErrorSnackBar(context, volume, fullPath);
         }
       }
     } catch (e) {
-      debugPrint('❌ Errore apertura: $e');
+      debugPrint('? Errore apertura: $e');
     }
+  }
+
+  static Future<void> _openDirectory(String path) async {
+    if (Platform.isWindows) {
+      await Process.run('explorer.exe', [path]);
+    } else {
+      debugPrint('Apertura directory non supportata su questa piattaforma');
+    }
+  }
+
+  static void _showErrorSnackBar(BuildContext context, String volume, String fullPath) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Impossibile trovare il file:\n$volume'),
+        backgroundColor: Colors.orange,
+        duration: const Duration(seconds: 5),
+        action: SnackBarAction(
+          label: 'DETTAGLI',
+          onPressed: () {
+            showDialog(
+              context: context,
+              builder: (c) => AlertDialog(
+                title: const Text('Dettaglio Percorso'),
+                content: SelectableText('Percorso cercato:\n$fullPath'),
+                actions: [TextButton(onPressed: () => Navigator.pop(c), child: const Text('CHIUDI'))],
+              ),
+            );
+          },
+        ),
+      ),
+    );
   }
 
   static String getTipoMultiFromRow(Map<String, dynamic> rowData, {String defaultValue = 'PDF'}) {

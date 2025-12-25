@@ -1,5 +1,5 @@
-name: jamsetgemini
-description: "App per ricerca spartiti"
+name: livescore
+description: LiveScore - Ottieni rapidamente lo spartito del pezzo eseguito in jam session
 publish_to: 'none'
 version: 1.0.0+1
 

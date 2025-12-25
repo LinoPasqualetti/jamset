@@ -2,6 +2,8 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
+import 'dart:convert';
+import 'dart:math' as math; // Aggiunto per math.min
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
@@ -83,9 +85,15 @@ class DatabaseService with ChangeNotifier {
 
   Future<void> _popolaDatiGlobaliDefault(Database db) async {
     final ora = DateTime.now().toIso8601String();
+    
+    // Rileva il percorso di default corretto per la piattaforma
+    String defaultPath = Platform.isAndroid 
+        ? '/storage/emulated/0/JamsetPDF/' 
+        : r'C:\JamsetPDF\';
+
     await db.insert('DatiSistremaApp', {
       'SistemaOperativo': Platform.isAndroid ? 'Android' : 'Windows',
-      'PercorsoPdf': '/storage/emulated/0/JamsetPDF/',
+      'PercorsoPdf': defaultPath,
       'Percorsodatabase': _databasePath,
       'id_catalogo_attivo': 1
     });
@@ -121,9 +129,18 @@ class DatabaseService with ChangeNotifier {
     if (_dbGlobale == null) return;
     try {
       final config = await _dbGlobale!.query('DatiSistremaApp', limit: 1);
+      
+      // Default di emergenza basato su piattaforma
+      String fallbackPath = Platform.isAndroid 
+          ? '/storage/emulated/0/JamsetPDF/' 
+          : r'C:\JamsetPDF\';
+
       if (config.isNotEmpty) {
-        _percorsoPdf = config.first['PercorsoPdf'] as String? ?? '/storage/emulated/0/JamsetPDF/';
+        _percorsoPdf = config.first['PercorsoPdf'] as String? ?? fallbackPath;
+      } else {
+        _percorsoPdf = fallbackPath;
       }
+
       final catalogoAttivo = await getCurrentVolume();
       if (catalogoAttivo.isNotEmpty) {
         _activeCatalogDbName = catalogoAttivo['nome_file_db'] as String? ?? _vecchioDbName;
@@ -216,7 +233,7 @@ class DatabaseService with ChangeNotifier {
         final testFTS = await _dbCatalogoAttivo!.rawQuery('''
           SELECT s.titolo, s.autore 
           FROM spartiti s
-          JOIN spartiti_fts f ON s.id_univoco_globale = f.rowid
+          JOIN spartiti_fts f ON s.IdBra = f.rowid
           WHERE spartiti_fts MATCH 'test'
           LIMIT 5
         ''');
@@ -421,8 +438,7 @@ class DatabaseService with ChangeNotifier {
 
     await db.execute('''
       CREATE TABLE IF NOT EXISTS spartiti (
-        id_univoco_globale INTEGER PRIMARY KEY AUTOINCREMENT,
-        IdBra TEXT, 
+        IdBra INTEGER PRIMARY KEY AUTOINCREMENT,
         titolo TEXT, 
         autore TEXT, 
         strumento TEXT, 
@@ -447,7 +463,7 @@ class DatabaseService with ChangeNotifier {
         volume,
         ArchivioProvenienza,
         content='spartiti',
-        content_rowid='id_univoco_globale'
+        content_rowid='IdBra'
       )
     ''');
 
@@ -471,7 +487,7 @@ class DatabaseService with ChangeNotifier {
         CREATE TRIGGER spartiti_ai AFTER INSERT ON spartiti
         BEGIN
           INSERT INTO spartiti_fts(rowid, titolo, autore, volume, ArchivioProvenienza)
-          VALUES (new.id_univoco_globale, new.titolo, new.autore, new.volume, new.ArchivioProvenienza);
+          VALUES (new.IdBra, new.titolo, new.autore, new.volume, new.ArchivioProvenienza);
         END
       ''');
 
@@ -479,7 +495,7 @@ class DatabaseService with ChangeNotifier {
         CREATE TRIGGER spartiti_ad AFTER DELETE ON spartiti
         BEGIN
           INSERT INTO spartiti_fts(spartiti_fts, rowid, titolo, autore, volume, ArchivioProvenienza)
-          VALUES('delete', old.id_univoco_globale, old.titolo, old.autore, old.volume, old.ArchivioProvenienza);
+          VALUES('delete', old.IdBra, old.titolo, old.autore, old.volume, old.ArchivioProvenienza);
         END
       ''');
 
@@ -487,9 +503,9 @@ class DatabaseService with ChangeNotifier {
         CREATE TRIGGER spartiti_au AFTER UPDATE ON spartiti
         BEGIN
           INSERT INTO spartiti_fts(spartiti_fts, rowid, titolo, autore, volume, ArchivioProvenienza)
-          VALUES('delete', old.id_univoco_globale, old.titolo, old.autore, old.volume, old.ArchivioProvenienza);
+          VALUES('delete', old.IdBra, old.titolo, old.autore, old.volume, old.ArchivioProvenienza);
           INSERT INTO spartiti_fts(rowid, titolo, autore, volume, ArchivioProvenienza)
-          VALUES (new.id_univoco_globale, new.titolo, new.autore, new.volume, new.ArchivioProvenienza);
+          VALUES (new.IdBra, new.titolo, new.autore, new.volume, new.ArchivioProvenienza);
         END
       ''');
 
@@ -530,7 +546,7 @@ class DatabaseService with ChangeNotifier {
       await db.transaction((txn) async {
         for (final spartito in spartiti) {
           await txn.insert('spartiti_fts', {
-            'rowid': spartito['id_univoco_globale'],
+            'rowid': spartito['IdBra'],
             'titolo': spartito['titolo'] ?? '',
             'autore': spartito['autore'] ?? '',
             'volume': spartito['volume'] ?? '',
@@ -606,7 +622,7 @@ class DatabaseService with ChangeNotifier {
       final ftsQuery = '''
         SELECT s.* 
         FROM spartiti s
-        JOIN spartiti_fts f ON s.id_univoco_globale = f.rowid
+        JOIN spartiti_fts f ON s.IdBra = f.rowid
         WHERE spartiti_fts MATCH ?
         ORDER BY rank
         LIMIT 100
@@ -627,7 +643,7 @@ class DatabaseService with ChangeNotifier {
         debugPrint('🎯 PRIMI 5 RISULTATI:');
         for (int i = 0; i < results.length && i < 5; i++) {
           final result = results[i];
-          debugPrint('   ${i + 1}. ${result['titolo']} - ${result['autore']} (ID: ${result['id_univoco_globale']})');
+          debugPrint('   ${i + 1}. ${result['titolo']} - ${result['autore']} (ID: ${result['IdBra']})');
         }
       } else {
         debugPrint('😞 Nessun risultato trovato');
@@ -742,14 +758,24 @@ class DatabaseService with ChangeNotifier {
     }
   }
 
-  // ============================ METODI AGGIUNTI ============================
+  // ============================ METODI DI IMPORT CSV ============================
 
   Future<int> importFromCsv(String csvPath, String targetDbName) async {
-    debugPrint('📥 Importazione CSV da $csvPath a $targetDbName');
+    debugPrint('\n📥📥📥 INIZIO IMPORT CSV 📥📥📥');
+    debugPrint('Percorso CSV: $csvPath');
+    debugPrint('Database destinazione: $targetDbName');
+
+    // ⚠️ PROTEZIONE: Impedisci import su VecchioDb.db
+    if (targetDbName == _vecchioDbName) {
+      throw Exception('Importazione su VecchioDb.db non permessa. Crea un nuovo catalogo.');
+    }
 
     try {
       final dbPath = p.join(_databasePath, targetDbName);
       final db = await openDatabase(dbPath);
+
+      // Verifica schema
+      await _verifyTableStructure(db);
 
       final csvFile = File(csvPath);
       if (!await csvFile.exists()) {
@@ -758,44 +784,390 @@ class DatabaseService with ChangeNotifier {
         return 0;
       }
 
-      final lines = await csvFile.readAsLines();
+      // Leggi file
+      String csvContent;
+      try {
+        csvContent = await csvFile.readAsString(encoding: utf8);
+      } catch (_) {
+        csvContent = await csvFile.readAsString(encoding: latin1);
+      }
+
+      // Rimuovi BOM se presente
+      if (csvContent.startsWith('\uFEFF')) {
+        csvContent = csvContent.substring(1);
+      }
+
+      // Processa righe
+      List<String> lines = csvContent
+          .replaceAll('\r\n', '\n')
+          .replaceAll('\r', '\n')
+          .split('\n')
+          .where((line) => line.trim().isNotEmpty)
+          .toList();
+
       if (lines.isEmpty) {
         debugPrint('⚠️ File CSV vuoto');
         await db.close();
         return 0;
       }
 
-      final headers = lines[0].split(',').map((h) => h.trim()).toList();
+      debugPrint('📄 Righe CSV trovate: ${lines.length}');
+
+      // DETERMINA separatore
+      final firstLine = lines[0];
+      final separator = firstLine.contains(';') ? ';' : ',';
+      debugPrint('🔤 Separatore rilevato: "$separator"');
+
+      // Processa intestazioni
+      List<String> headers = _parseCsvLine(firstLine, separator);
+      headers = headers.map((h) => h.trim().replaceAll('"', '')).toList();
+
+      debugPrint('📋 Colonne CSV (${headers.length}):');
+      for (int i = 0; i < headers.length; i++) {
+        debugPrint('   $i. "${headers[i]}"');
+      }
+
+      // Mappa delle colonne OBBLIGATORIE
+      final requiredFields = {
+        'titolo': ['titolo', 'Titolo', 'TITOLO', 'Title', 'Nome'],
+        'volume': ['volume', 'Volume', 'VOLUME', 'Tomo'],
+        'NumPag': ['NumPag', 'Pagine', 'Pages', 'NumeroPagine', 'numpag'],
+        'PercResto': ['PercResto', 'Percorso', 'percorso', 'Path', 'PATH', 'File', 'NomeFile']
+      };
+
+      // Trova indici delle colonne obbligatorie
+      final columnIndices = <String, int>{};
+      for (final entry in requiredFields.entries) {
+        final dbColumn = entry.key;
+        final possibleNames = entry.value;
+
+        int? foundIndex;
+        for (int i = 0; i < headers.length; i++) {
+          if (possibleNames.contains(headers[i])) {
+            foundIndex = i;
+            break;
+          }
+        }
+
+        if (foundIndex != null) {
+          columnIndices[dbColumn] = foundIndex;
+          debugPrint('✅ "${dbColumn}" trovato alla colonna ${foundIndex} (${headers[foundIndex]})');
+        } else {
+          debugPrint('❌ "${dbColumn}" NON TROVATO! Nomi cercati: $possibleNames');
+        }
+      }
+
+      // Verifica che tutte le colonne obbligatorie siano presenti
+      if (columnIndices.length < requiredFields.length) {
+        debugPrint('⚠️ Mancano alcune colonne obbligatorie. Verrà usato un valore di default.');
+      }
+
+      // Mappa delle colonne OPZIONALI
+      final optionalFields = {
+        'IdBra': ['IdBra', 'ID', 'id', 'Codice'],
+        'autore': ['autore', 'Autore', 'AUTORE', 'Author', 'Compositore'],
+        'strumento': ['strumento', 'Strumento', 'Instrument'],
+        'PercRadice': ['PercRadice', 'PercorsoRadice', 'RootPath'],
+        'PrimoLink': ['PrimoLink', 'Link', 'URL'],
+        'TipoMulti': ['TipoMulti', 'TipoMultipla'],
+        'TipoDocu': ['TipoDocu', 'Tipo', 'TipoDocumento'],
+        'ArchivioProvenienza': ['ArchivioProvenienza', 'Archivio', 'archivio', 'Provenienza', 'Source'],
+        'NumOrig': ['NumOrig', 'Originali', 'NumOriginali'],
+        'IdVolume': ['IdVolume', 'IDVolume'],
+        'IdAutore': ['IdAutore', 'IDAutore']
+      };
+
+      final optionalIndices = <String, int>{};
+      for (final entry in optionalFields.entries) {
+        final dbColumn = entry.key;
+        final possibleNames = entry.value;
+
+        for (int i = 0; i < headers.length; i++) {
+          if (possibleNames.contains(headers[i])) {
+            optionalIndices[dbColumn] = i;
+            debugPrint('   "${dbColumn}" trovato alla colonna $i (${headers[i]})');
+            break;
+          }
+        }
+      }
+
+      // Disabilita trigger per performance
+      await _disableTriggers(db);
+      await db.execute('DELETE FROM spartiti_fts');
+
       int importedCount = 0;
+      int errorCount = 0;
+      const int batchSize = 500; // Ridotto per gestione migliore
+      final batch = db.batch();
 
-      await db.transaction((txn) async {
-        for (int i = 1; i < lines.length; i++) {
-          final line = lines[i].trim();
-          if (line.isEmpty) continue;
+      debugPrint('\n🔄 Inizio importazione...');
 
-          final values = line.split(',').map((v) => v.trim()).toList();
-          if (values.length < headers.length) continue;
+      for (int i = 1; i < lines.length; i++) {
+        final line = lines[i].trim();
+        if (line.isEmpty) continue;
 
-          final record = <String, dynamic>{};
-          for (int j = 0; j < headers.length; j++) {
-            record[headers[j]] = values[j];
+        try {
+          // Parsa la riga
+          List<String> values = _parseCsvLine(line, separator);
+          values = values.map((v) => v.trim().replaceAll('"', '')).toList();
+
+          // Salta se non ha abbastanza valori
+          if (values.length < headers.length) {
+            if (errorCount < 5) {
+              debugPrint('⚠️ Riga $i: Troppo pochi valori (${values.length} vs ${headers.length})');
+            }
+            errorCount++;
+            continue;
           }
 
-          try {
-            await txn.insert('spartiti', record);
-            importedCount++;
-          } catch (_) {}
+          // Crea record con valori di default
+          final record = <String, dynamic>{
+            'titolo': 'Senza titolo',
+            'volume': 'Senza volume',
+            'NumPag': 0,
+            'PercResto': ''
+          };
+
+          // Imposta valori OBBLIGATORI
+          if (columnIndices.containsKey('titolo') &&
+              columnIndices['titolo']! < values.length &&
+              values[columnIndices['titolo']!].isNotEmpty) {
+            record['titolo'] = values[columnIndices['titolo']!];
+          }
+
+          if (columnIndices.containsKey('volume') &&
+              columnIndices['volume']! < values.length &&
+              values[columnIndices['volume']!].isNotEmpty) {
+            record['volume'] = values[columnIndices['volume']!];
+          }
+
+          if (columnIndices.containsKey('NumPag') &&
+              columnIndices['NumPag']! < values.length &&
+              values[columnIndices['NumPag']!].isNotEmpty) {
+            final numpagStr = values[columnIndices['NumPag']!];
+            record['NumPag'] = int.tryParse(numpagStr) ?? 0;
+          }
+
+          if (columnIndices.containsKey('PercResto') &&
+              columnIndices['PercResto']! < values.length) {
+            record['PercResto'] = values[columnIndices['PercResto']!];
+          }
+
+          // Imposta valori OPZIONALI
+          for (final entry in optionalIndices.entries) {
+            final dbColumn = entry.key;
+            final colIndex = entry.value;
+
+            if (colIndex < values.length && values[colIndex].isNotEmpty) {
+              if (dbColumn == 'NumOrig') {
+                record[dbColumn] = int.tryParse(values[colIndex]) ?? 0;
+              } else {
+                record[dbColumn] = values[colIndex];
+              }
+            }
+          }
+
+          // Aggiungi al batch
+          batch.insert('spartiti', record, conflictAlgorithm: ConflictAlgorithm.replace);
+          importedCount++;
+
+          // Commit batch ogni batchSize record
+          if (importedCount % batchSize == 0) {
+            debugPrint('📦 Commit batch di $batchSize record...');
+            await batch.commit();
+            // Reset batch
+            for (int j = 0; j < batchSize; j++) {
+              batch.insert;
+            }
+          }
+
+          // Log progresso ogni 1000 record
+          if (importedCount % 1000 == 0) {
+            debugPrint('   Importati $importedCount record...');
+          }
+
+        } catch (e) {
+          errorCount++;
+          if (errorCount <= 10) {
+            debugPrint('❌ Errore riga $i: ${e.toString().split('\n').first}');
+          }
+          continue;
         }
-      });
+      }
+
+      // Commit batch finale
+      debugPrint('📦 Commit batch finale...');
+      await batch.commit();
+
+      // Riattiva trigger e ricostruisci FTS
+      await _enableTriggers(db);
+      await _rebuildFTS(db);
+
+      // Statistiche finali
+      final countAfter = await db.rawQuery('SELECT COUNT(*) as count FROM spartiti');
+      final recordsAfter = countAfter.first['count'] as int? ?? 0;
 
       await db.close();
 
-      debugPrint('✅ Importati $importedCount record da CSV');
+      debugPrint('\n✅✅✅ IMPORT CSV COMPLETATO ✅✅✅');
+      debugPrint('📊 Statistiche:');
+      debugPrint('   - Righe CSV: ${lines.length - 1}');
+      debugPrint('   - Record importati: $importedCount');
+      debugPrint('   - Record nel database: $recordsAfter');
+      debugPrint('   - Errori: $errorCount');
+      debugPrint('   - Successo: ${lines.length > 1 ? (importedCount / (lines.length - 1) * 100).toStringAsFixed(1) : 0}%');
+
+      // Aggiorna conteggio nel catalogo
+      await _updateCatalogCount(targetDbName, recordsAfter);
+
       return importedCount;
 
-    } catch (e) {
-      debugPrint('❌ Errore importazione CSV: $e');
+    } catch (e, stackTrace) {
+      debugPrint('❌❌❌ ERRORE IMPORT CSV ❌❌❌');
+      debugPrint('Errore: $e');
+      debugPrint('Stack trace: $stackTrace');
       return 0;
+    }
+  }
+
+  // ============================ METODI HELPER ============================
+
+  Future<void> _verifyTableStructure(Database db) async {
+    try {
+      final tableInfo = await db.rawQuery("PRAGMA table_info('spartiti')");
+      debugPrint('🏗️ Struttura tabella spartiti:');
+      for (final column in tableInfo) {
+        debugPrint('   ${column['name']} (${column['type']})');
+      }
+    } catch (e) {
+      debugPrint('⚠️ Errore verifica struttura: $e');
+    }
+  }
+
+  List<String> _parseCsvLine(String line, String separator) {
+    final result = <String>[];
+    final buffer = StringBuffer();
+    bool inQuotes = false;
+
+    for (int i = 0; i < line.length; i++) {
+      final char = line[i];
+
+      if (char == '"') {
+        if (i + 1 < line.length && line[i + 1] == '"') {
+          // Doppie virgolette (escape)
+          buffer.write('"');
+          i++;
+        } else {
+          // Virgoletta singola
+          inQuotes = !inQuotes;
+        }
+      } else if (char == separator && !inQuotes) {
+        result.add(buffer.toString());
+        buffer.clear();
+      } else {
+        buffer.write(char);
+      }
+    }
+
+    // Aggiungi ultimo campo
+    result.add(buffer.toString());
+    return result;
+  }
+
+  Future<void> _disableTriggers(Database db) async {
+    try {
+      await db.execute('DROP TRIGGER IF EXISTS spartiti_ai');
+      await db.execute('DROP TRIGGER IF EXISTS spartiti_au');
+      await db.execute('DROP TRIGGER IF EXISTS spartiti_ad');
+      debugPrint('🔧 Trigger disabilitati');
+    } catch (e) {
+      debugPrint('⚠️ Errore disabilitazione trigger: $e');
+    }
+  }
+
+  Future<void> _enableTriggers(Database db) async {
+    try {
+      await _creaTriggerFTS(db);
+      debugPrint('🔧 Trigger riattivati');
+    } catch (e) {
+      debugPrint('⚠️ Errore abilitazione trigger: $e');
+    }
+  }
+
+  Future<void> _rebuildFTS(Database db) async {
+    try {
+      debugPrint('🔄 Ricostruzione indice FTS...');
+      await db.execute('DELETE FROM spartiti_fts');
+
+      // Inserisci tutti i record da spartiti a spartiti_fts
+      final count = await db.rawQuery('SELECT COUNT(*) as count FROM spartiti');
+      final total = count.first['count'] as int? ?? 0;
+
+      debugPrint('   Ricostruendo $total record...');
+
+      await db.rawQuery('''
+        INSERT INTO spartiti_fts(rowid, titolo, autore, volume, ArchivioProvenienza)
+        SELECT IdBra, titolo, autore, volume, ArchivioProvenienza 
+        FROM spartiti
+      ''');
+
+      debugPrint('✅ Indice FTS ricostruito ($total record)');
+    } catch (e) {
+      debugPrint('❌ Errore ricostruzione FTS: $e');
+      // Tentativo alternativo
+      try {
+        await db.execute('INSERT INTO spartiti_fts(spartiti_fts) VALUES(\'rebuild\')');
+        debugPrint('✅ Indice FTS ricostruito con comando REBUILD');
+      } catch (e2) {
+        debugPrint('❌ Anche il REBUILD ha fallito: $e2');
+      }
+    }
+  }
+
+  Future<void> _updateCatalogCount(String dbName, int count) async {
+    try {
+      if (_dbGlobale != null) {
+        await _dbGlobale!.update(
+            'elenco_cataloghi',
+            {
+              'conteggio_brani': count,
+              'data_ultimo_aggiornamento': DateTime.now().toIso8601String()
+            },
+            where: 'nome_file_db = ?',
+            whereArgs: [dbName]
+        );
+        debugPrint('📊 Conteggio catalogo aggiornato: $count brani');
+      }
+    } catch (e) {
+      debugPrint('⚠️ Errore aggiornamento conteggio catalogo: $e');
+    }
+  }
+
+  Future<void> _debugCsvStructure(String csvPath) async {
+    debugPrint('\n🔍 ANALISI STRUTTURA CSV');
+
+    final file = File(csvPath);
+    final content = await file.readAsString(encoding: latin1);
+    final lines = content.split('\n');
+
+    debugPrint('📏 Totale righe: ${lines.length}');
+
+    if (lines.isEmpty) return;
+
+    // Analizza prima riga (intestazioni)
+    final firstLine = lines[0];
+    debugPrint('📋 Prima riga (intestazioni): $firstLine');
+
+    // Conta separatori
+    final commaCount = firstLine.split(',').length - 1;
+    final semicolonCount = firstLine.split(';').length - 1;
+    debugPrint('🔤 Separatori: $commaCount virgole, $semicolonCount punto e virgola');
+
+    // Analizza qualche riga dati
+    for (int i = 1; i < math.min(5, lines.length); i++) {
+      if (lines[i].trim().isNotEmpty) {
+        debugPrint('📝 Riga $i: ${lines[i].substring(0, math.min(100, lines[i].length))}...');
+      }
     }
   }
 
@@ -873,6 +1245,23 @@ class DatabaseService with ChangeNotifier {
     } catch (e) {
       debugPrint('❌ Errore diagnostica: $e\n');
     }
+  }
+
+  Future<void> testSmallImport(String csvPath, String targetDbName, int maxRows) async {
+    debugPrint('\n🧪 TEST IMPORT PICCOLO (max $maxRows righe)');
+
+    final tempDbName = 'test_${DateTime.now().millisecondsSinceEpoch}.db';
+    await createCatalogoDatabase(tempDbName);
+
+    final result = await importFromCsv(csvPath, tempDbName);
+
+    debugPrint('🧪 Test completato: $result record importati');
+
+    // Pulisci
+    final tempPath = p.join(_databasePath, tempDbName);
+    try {
+      await File(tempPath).delete();
+    } catch (_) {}
   }
 
   Future<void> close() async {

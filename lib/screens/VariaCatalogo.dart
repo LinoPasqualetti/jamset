@@ -4,8 +4,8 @@ import 'package:flutter/services.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart' as path;
 
-import 'package:jamsetgemini/main.dart';
-import 'package:jamsetgemini/screens/lista_spartiti_catalogo.dart';
+import 'package:livescore/main.dart';
+import 'package:livescore/screens/lista_spartiti_catalogo.dart';
 
 class VariaCatalogoScreen extends StatefulWidget {
   final Map<String, dynamic>? initialData;

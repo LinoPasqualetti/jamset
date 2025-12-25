@@ -19,6 +19,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "jamsetgemini"
+rootProject.name = "livescore"
 include(":app")
- 

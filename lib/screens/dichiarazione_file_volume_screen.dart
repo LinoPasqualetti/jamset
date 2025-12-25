@@ -2,7 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:path/path.dart' as path; // AGGIUNTO IMPORT MANCANTE
-import 'package:jamsetgemini/main.dart'; // Per databaseService e variabili globali
+import 'package:livescore/main.dart'; // Per databaseService e variabili globali
 
 class DichiarazioneFileVolumeScreen extends StatefulWidget {
   const DichiarazioneFileVolumeScreen({super.key});

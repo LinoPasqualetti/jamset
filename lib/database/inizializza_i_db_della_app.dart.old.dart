@@ -7,7 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 import 'package:sqflite/sqflite.dart';
 
-// Import delle variabili globali di jamsetgemini
+// Import delle variabili globali di livescore
 import '../main.dart'; // Importa gPercorsoPdf, dbGlobale, etc.
 
 const String _dbGlobaleName = 'DBGlobale_seed.db';
@@ -220,7 +220,7 @@ Future<String> _getDefaultSystemWidePath() async {
   final defaultPaths = {
     'android': '/storage/emulated/0/JamsetPDF/',
     'windows': r'C:\JamsetPDF\',
-    'linux': '/var/lib/jamsetgemini/pdf/',
+    'linux': '/var/lib/livescore/pdf/',
     'macos': '/Library/Application Support/JamsetPDF/',
   };
 
@@ -285,7 +285,7 @@ Future<void> inizializzaIDbDellaApp() async {
 
   try {
     debugPrint("========================================");
-    debugPrint("INIZIALIZZAZIONE DB jamsetgemini");
+    debugPrint("INIZIALIZZAZIONE DB livescore");
     debugPrint("Piattaforma: ${Platform.operatingSystem}");
     debugPrint("Timestamp: ${DateTime.now()}");
     debugPrint("========================================");

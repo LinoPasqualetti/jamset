@@ -1,6 +1,6 @@
 // lib/main.dart - VERSIONE FINALE CON FILTRO LOG TASTIERA
 import 'package:flutter/material.dart';
-import 'package:jamsetgemini/screens/main_screen.dart';
+import 'package:livescore/screens/main_screen.dart';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
@@ -11,11 +11,11 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:sqlite3_flutter_libs/sqlite3_flutter_libs.dart';
 
 // Import del nuovo DatabaseService
-import 'package:jamsetgemini/services/database_service.dart';
+import 'package:livescore/services/database_service.dart';
 
-import 'package:jamsetgemini/platform/opener_platform_interface.dart';
-import 'package:jamsetgemini/platform/android_opener.dart';
-import 'package:jamsetgemini/platform/windows_opener.dart';
+import 'package:livescore/platform/opener_platform_interface.dart';
+import 'package:livescore/platform/android_opener.dart';
+import 'package:livescore/platform/windows_opener.dart';
 
 // Chiave globale per accedere al Navigator
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
@@ -200,7 +200,7 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       navigatorKey: navigatorKey,
-      title: 'Jamset Gemini',
+      title: 'LiveScore',
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.indigo),
         useMaterial3: true,

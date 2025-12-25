@@ -1,0 +1,3 @@
+SELECT *
+FROM sqlite_master
+WHERE type = 'index' AND tbl_name = 'spartiti';

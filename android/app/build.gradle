@@ -30,7 +30,7 @@ if (keystorePropertiesFile.exists()) {
 }
 
 android {
-    namespace "com.example.jamsetgemini"
+    namespace "com.example.livescore"
     compileSdk 36  // CAMBIATO DA 34 A 36
 
     compileOptions {
@@ -47,7 +47,7 @@ android {
     }
 
     defaultConfig {
-        applicationId "com.example.jamsetgemini"
+        applicationId "com.example.livescore"
         minSdkVersion flutter.minSdkVersion
         targetSdkVersion 34
         versionCode flutterVersionCode.toInteger()
