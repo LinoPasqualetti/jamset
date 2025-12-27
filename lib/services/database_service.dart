@@ -85,11 +85,11 @@ class DatabaseService with ChangeNotifier {
 
   Future<void> _popolaDatiGlobaliDefault(Database db) async {
     final ora = DateTime.now().toIso8601String();
-    
-    // Rileva il percorso di default corretto per la piattaforma
-    String defaultPath = Platform.isAndroid 
-        ? '/storage/emulated/0/JamsetPDF/' 
-        : r'C:\JamsetPDF\';
+
+    // Rileva il percorso di default corretto per la piattaforma (taglio a C:\ e /storage/emulated/0/)
+    String defaultPath = Platform.isAndroid
+        ? '/storage/emulated/0/'
+        : r'C:\';
 
     await db.insert('DatiSistremaApp', {
       'SistemaOperativo': Platform.isAndroid ? 'Android' : 'Windows',
@@ -129,11 +129,11 @@ class DatabaseService with ChangeNotifier {
     if (_dbGlobale == null) return;
     try {
       final config = await _dbGlobale!.query('DatiSistremaApp', limit: 1);
-      
-      // Default di emergenza basato su piattaforma
-      String fallbackPath = Platform.isAndroid 
-          ? '/storage/emulated/0/JamsetPDF/' 
-          : r'C:\JamsetPDF\';
+
+      // Default di emergenza basato su piattaforma (taglio)
+      String fallbackPath = Platform.isAndroid
+          ? '/storage/emulated/0/'
+          : r'C:\';
 
       if (config.isNotEmpty) {
         _percorsoPdf = config.first['PercorsoPdf'] as String? ?? fallbackPath;
@@ -898,7 +898,7 @@ class DatabaseService with ChangeNotifier {
       int importedCount = 0;
       int errorCount = 0;
       const int batchSize = 500; // Ridotto per gestione migliore
-      final batch = db.batch();
+      var batch = db.batch();
 
       debugPrint('\n🔄 Inizio importazione...');
 
@@ -974,11 +974,9 @@ class DatabaseService with ChangeNotifier {
           // Commit batch ogni batchSize record
           if (importedCount % batchSize == 0) {
             debugPrint('📦 Commit batch di $batchSize record...');
-            await batch.commit();
+            await batch.commit(noResult: true);
             // Reset batch
-            for (int j = 0; j < batchSize; j++) {
-              batch.insert;
-            }
+            batch = db.batch();
           }
 
           // Log progresso ogni 1000 record
@@ -997,7 +995,7 @@ class DatabaseService with ChangeNotifier {
 
       // Commit batch finale
       debugPrint('📦 Commit batch finale...');
-      await batch.commit();
+      await batch.commit(noResult: true);
 
       // Riattiva trigger e ricostruisci FTS
       await _enableTriggers(db);
@@ -1028,6 +1026,489 @@ class DatabaseService with ChangeNotifier {
       debugPrint('Stack trace: $stackTrace');
       return 0;
     }
+  }
+
+  // ============================ METODI ESPORTAZIONE CSV COMPLETA (SENZA LIMITI) ============================
+// Metodo per analizzare l'ordinamento (rinominato per evitare conflitti)
+  void _analyzeExportSorting(List<Map<String, dynamic>> results) {
+    if (results.isEmpty) return;
+
+    debugPrint('\n🔍 ANALISI ORDINAMENTO ESPORTAZIONE:');
+
+    String? currentVolume;
+    int volumeRecordCount = 0;
+    int mainVolumeCount = 0;
+    int otherVolumeCount = 0;
+    int pieceCount = 0;
+    int totalVolumes = 0;
+    List<int> currentVolumePages = [];
+    bool hasVolumeMainRecord = false;
+
+    for (final row in results) {
+      final volumeName = row['volume']?.toString() ?? '(senza volume)';
+      final tipoDocu = row['TipoDocu']?.toString() ?? '';
+      final idBra = row['IdBra']?.toString() ?? '';
+      final idVolume = row['IdVolume']?.toString() ?? '';
+      final numPag = row['NumPag'] is int ? row['NumPag'] as int : 0;
+      final titolo = row['titolo']?.toString() ?? 'Senza titolo';
+
+      // Se cambia volume
+      if (currentVolume != volumeName) {
+        if (currentVolume != null) {
+          totalVolumes++;
+          debugPrint('   📚 Fine volume "$currentVolume": $volumeRecordCount record');
+          if (currentVolumePages.isNotEmpty) {
+            debugPrint('     🎵 Ordine pagine brani: ${currentVolumePages.join(', ')}');
+            bool isOrdered = true;
+            for (int i = 1; i < currentVolumePages.length; i++) {
+              if (currentVolumePages[i] < currentVolumePages[i - 1]) {
+                isOrdered = false;
+                debugPrint('     ❌ ERRORE ORDINAMENTO: Pagina ${currentVolumePages[i]} < ${currentVolumePages[i-1]}');
+              }
+            }
+            if (isOrdered) {
+              debugPrint('     ✅ Pagine in ordine crescente');
+            }
+          }
+          if (!hasVolumeMainRecord) {
+            debugPrint('     ⚠️ ATTENZIONE: Nessun record volume principale trovato!');
+          }
+          currentVolumePages.clear();
+          hasVolumeMainRecord = false;
+        }
+
+        currentVolume = volumeName;
+        volumeRecordCount = 0;
+        debugPrint('   ──────────────────────────────');
+        debugPrint('   📖 NUOVO VOLUME: "$volumeName"');
+      }
+
+      volumeRecordCount++;
+
+      if (tipoDocu == 'V') {
+        // Verifica se è il record volume principale (IdBra = IdVolume)
+        final isMainVolume = (idBra == idVolume);
+        if (isMainVolume) {
+          mainVolumeCount++;
+          hasVolumeMainRecord = true;
+          debugPrint('     🏷️  [PRIMO] Record volume principale: "$titolo" (ID: $idBra)');
+        } else {
+          otherVolumeCount++;
+          debugPrint('     📋 Record volume secondario: "$titolo" (ID: $idBra)');
+        }
+      } else {
+        pieceCount++;
+        debugPrint('     🎵 Brano: "$titolo" (Pagina: $numPag)');
+        currentVolumePages.add(numPag);
+      }
+    }
+
+    if (currentVolume != null) {
+      totalVolumes++;
+      debugPrint('   📚 Fine volume "$currentVolume": $volumeRecordCount record');
+      if (!hasVolumeMainRecord) {
+        debugPrint('     ⚠️ ATTENZIONE: Nessun record volume principale trovato!');
+      }
+    }
+
+    debugPrint('\n📊 RIEPILOGO ORDINAMENTO:');
+    debugPrint('   • Volumi totali: $totalVolumes');
+    debugPrint('   • Record volume principale: $mainVolumeCount');
+    debugPrint('   • Altri record volume: $otherVolumeCount');
+    debugPrint('   • Record brani: $pieceCount');
+    debugPrint('   • Totale record: ${results.length}');
+
+    // Verifica coerenza
+    if (mainVolumeCount != totalVolumes) {
+      debugPrint('   ⚠️ DISCREPANZA: $mainVolumeCount record principali vs $totalVolumes volumi');
+    }
+  }
+
+// Metodo per costruire il contenuto CSV
+  String _buildCsvContent(
+      List<Map<String, dynamic>> results,
+      bool includeHeaders,
+      bool includeVolumeSeparators,
+      ) {
+    final headers = [
+      'IdBra',
+      'titolo',
+      'autore',
+      'strumento',
+      'volume',
+      'PercRadice',
+      'PercResto',
+      'Primolink',
+      'TipoMulti',
+      'TipoDocu',
+      'ArchivioProvenienza',
+      'NumPag',
+      'NumOrig',
+      'IdVolume',
+      'IdAutore'
+    ];
+
+    final csvBuffer = StringBuffer();
+    final dataStopwatch = Stopwatch()..start();
+
+    // Header
+    if (includeHeaders) {
+      csvBuffer.write(headers.join(';'));
+      csvBuffer.write('\n');
+    }
+
+    // Dati
+    String? currentVolume;
+    int totalVolumes = 0;
+
+    for (final row in results) {
+      final volumeName = row['volume']?.toString() ?? '';
+
+      // Aggiungi riga vuota tra volumi se richiesto
+      if (includeVolumeSeparators && currentVolume != null && currentVolume != volumeName) {
+        csvBuffer.write('\n');
+        totalVolumes++;
+      }
+
+      if (currentVolume != volumeName) {
+        currentVolume = volumeName;
+      }
+
+      final List<String> rowValues = [];
+
+      for (final header in headers) {
+        var value = row[header];
+
+        if (value == null) {
+          rowValues.add('');
+        } else {
+          String stringValue = value.toString();
+
+          // Gestisci caratteri speciali CSV
+          if (stringValue.contains(';') ||
+              stringValue.contains('"') ||
+              stringValue.contains('\n') ||
+              stringValue.contains('\r')) {
+            stringValue = '"${stringValue.replaceAll('"', '""')}"';
+          }
+
+          rowValues.add(stringValue);
+        }
+      }
+
+      csvBuffer.write(rowValues.join(';'));
+      csvBuffer.write('\n');
+    }
+
+    if (currentVolume != null) {
+      totalVolumes++;
+    }
+
+    dataStopwatch.stop();
+    debugPrint('📊 CSV costruito: ${results.length} record, $totalVolumes volumi');
+    debugPrint('⏱️  Tempo: ${dataStopwatch.elapsedMilliseconds}ms');
+
+    return csvBuffer.toString();
+  }
+
+// Aggiorna anche i metodi specifici per includere il nuovo parametro
+  Future<String> exportFullCatalogToCsv() async {
+    debugPrint('\n📤 Esportazione CATALOGO COMPLETO');
+    return await exportAllToCsv(
+      includeHeaders: true,
+      includeVolumeSeparators: false,
+    );
+  }
+
+  Future<String> exportVolumeToCsv(String volumeName) async {
+    debugPrint('\n📤 Esportazione per VOLUME: "$volumeName"');
+    return await exportAllToCsv(
+      whereClause: 'volume LIKE ?',
+      whereArgs: ['%$volumeName%'],
+      includeHeaders: true,
+      includeVolumeSeparators: false,
+    );
+  }
+
+  Future<String> exportArchiveToCsv(String archiveName) async {
+    debugPrint('\n📤 Esportazione per ARCHIVIO: "$archiveName"');
+    return await exportAllToCsv(
+      whereClause: 'ArchivioProvenienza = ?',
+      whereArgs: [archiveName],
+      includeHeaders: true,
+      includeVolumeSeparators: false,
+    );
+  }
+
+  Future<String> exportAuthorToCsv(String authorName) async {
+    debugPrint('\n📤 Esportazione per AUTORE: "$authorName"');
+    return await exportAllToCsv(
+      whereClause: 'autore LIKE ?',
+      whereArgs: ['%$authorName%'],
+      includeHeaders: true,
+      includeVolumeSeparators: false,
+    );
+  }
+
+  Future<String> exportInstrumentToCsv(String instrument) async {
+    debugPrint('\n📤 Esportazione per STRUMENTO: "$instrument"');
+    return await exportAllToCsv(
+      whereClause: 'strumento LIKE ?',
+      whereArgs: ['%$instrument%'],
+      includeHeaders: true,
+      includeVolumeSeparators: false,
+    );
+  }
+
+  Future<String> exportVolumeRecordsToCsv() async {
+    debugPrint('\n📤 Esportazione RECORD VOLUME (tipodocu = V)');
+    return await exportAllToCsv(
+      whereClause: 'tipodocu = ?',
+      whereArgs: ['V'],
+      includeHeaders: true,
+      includeVolumeSeparators: false,
+    );
+  }
+
+  Future<String> exportAllToCsv({
+    String? whereClause,
+    List<dynamic>? whereArgs,
+    bool includeHeaders = true,
+    bool includeVolumeSeparators = false,
+  }) async {
+    debugPrint('\n📤 ESPORTAZIONE TUTTI I RECORD');
+    debugPrint('   Where: $whereClause');
+    debugPrint('   Args: $whereArgs');
+    debugPrint('   Headers: $includeHeaders');
+    debugPrint('   Volume separators: $includeVolumeSeparators');
+
+    if (_dbCatalogoAttivo == null) {
+      throw Exception('Database catalogo non caricato');
+    }
+
+    try {
+      // Costruisci query base
+      String query = 'SELECT * FROM spartiti';
+
+      if (whereClause != null && whereClause.isNotEmpty) {
+        query += ' WHERE $whereClause';
+      }
+
+      // ORDINAMENTO SEMPLICE: volume, tipodocu DESC, NumPag
+      query += ' ORDER BY volume, tipodocu DESC, NumPag';
+
+      debugPrint('📝 Query esportazione:');
+      debugPrint('   SQL: $query');
+      if (whereArgs != null && whereArgs.isNotEmpty) {
+        debugPrint('   Parametri: $whereArgs');
+      }
+
+      // Esegui query
+      final queryStopwatch = Stopwatch()..start();
+      final results = await _dbCatalogoAttivo!.rawQuery(query, whereArgs);
+      queryStopwatch.stop();
+
+      debugPrint('⏱️  Tempo query: ${queryStopwatch.elapsedMilliseconds}ms');
+      debugPrint('📊 Record trovati: ${results.length}');
+
+      if (results.isEmpty) {
+        debugPrint('ℹ️ Nessun record da esportare');
+        return '';
+      }
+
+      // DEBUG: stampa primi 20 record per verificare ordinamento
+      debugPrint('\n🧪 VERIFICA ORDINAMENTO (primi 20 record):');
+      for (int i = 0; i < math.min(20, results.length); i++) {
+        final row = results[i];
+        final volume = row['volume'] ?? '(no volume)';
+        final tipodocu = row['tipodocu'] ?? '(NULL)';
+        final numpag = row['NumPag'] ?? 0;
+        final titolo = (row['titolo']?.toString() ?? 'Senza titolo').substring(0, math.min(30, row['titolo']?.toString().length ?? 0));
+
+        debugPrint('${i + 1}. Vol: "$volume" | Tipo: "$tipodocu" | Pag: $numpag | Tit: "$titolo"');
+      }
+
+      // Costruisci CSV
+      final csvContent = _buildCsvContent(
+        results,
+        includeHeaders,
+        includeVolumeSeparators,
+      );
+
+      // Salva in file temporaneo
+      final tempDir = await getTemporaryDirectory();
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final csvPath = p.join(tempDir.path, 'export_completo_$timestamp.csv');
+
+      await File(csvPath).writeAsString(csvContent, flush: true);
+
+      debugPrint('✅ Esportazione completata: ${results.length} record');
+      debugPrint('💾 File salvato: $csvPath');
+
+      return csvPath;
+
+    } catch (e, stackTrace) {
+      debugPrint('❌❌❌ ERRORE ESPORTAZIONE COMPLETA ❌❌❌');
+      debugPrint('Errore: $e');
+      debugPrint('Stack trace: $stackTrace');
+      rethrow;
+    }
+  }
+  /// Esporta i record di tipo "Brano" (tipodocu != 'V') - TUTTI i record con ordinamento per volume
+  Future<String> exportPieceRecordsToCsv() async {
+    debugPrint('\n📤 Esportazione RECORD BRANO (tipodocu != V)');
+    return await exportAllToCsv(
+      whereClause: 'tipodocu != ? OR tipodocu IS NULL',
+      whereArgs: ['V'],
+      includeHeaders: true,
+      includeVolumeSeparators: false,
+    );
+  }
+
+  Future<String> exportByVolumeId(String idVolume) async {
+    debugPrint('\n📤 Esportazione per ID VOLUME: "$idVolume"');
+    return await exportAllToCsv(
+      whereClause: 'IdVolume = ?',
+      whereArgs: [idVolume],
+      includeHeaders: true,
+      includeVolumeSeparators: false,
+    );
+  }
+
+  Future<String> exportWithFilters({
+    String? volume,
+    String? archive,
+    String? author,
+    String? instrument,
+    String? tipoDocu,
+  }) async {
+    debugPrint('\n📤 Esportazione con FILTRI MULTIPLI');
+
+    final conditions = <String>[];
+    final args = <dynamic>[];
+
+    if (volume != null && volume.isNotEmpty) {
+      conditions.add('volume LIKE ?');
+      args.add('%$volume%');
+    }
+
+    if (archive != null && archive.isNotEmpty) {
+      conditions.add('ArchivioProvenienza = ?');
+      args.add(archive);
+    }
+
+    if (author != null && author.isNotEmpty) {
+      conditions.add('autore LIKE ?');
+      args.add('%$author%');
+    }
+
+    if (instrument != null && instrument.isNotEmpty) {
+      conditions.add('strumento LIKE ?');
+      args.add('%$instrument%');
+    }
+
+    if (tipoDocu != null && tipoDocu.isNotEmpty) {
+      conditions.add('tipodocu = ?');
+      args.add(tipoDocu);
+    }
+
+    String whereClause = conditions.isNotEmpty ? conditions.join(' AND ') : '';
+
+    return await exportAllToCsv(
+      whereClause: whereClause.isNotEmpty ? whereClause : null,
+      whereArgs: args.isNotEmpty ? args : null,
+      includeHeaders: true,
+      includeVolumeSeparators: false,
+    );
+  }
+  // Metodo legacy per compatibilità
+
+
+// Metodo helper per export con query specifica
+  Future<String> _executeCsvExport(String query, {List<dynamic>? args}) async {
+    if (_dbCatalogoAttivo == null) {
+      throw Exception('Database catalogo non caricato');
+    }
+
+    final results = await _dbCatalogoAttivo!.rawQuery(query, args);
+
+    if (results.isEmpty) {
+      return '';
+    }
+
+    final headers = [
+      'IdBra',
+      'titolo',
+      'autore',
+      'strumento',
+      'volume',
+      'PercRadice',
+      'PercResto',
+      'Primolink',
+      'TipoMulti',
+      'TipoDocu',
+      'ArchivioProvenienza',
+      'NumPag',
+      'NumOrig',
+      'IdVolume',
+      'IdAutore'
+    ];
+
+    final csvBuffer = StringBuffer();
+    csvBuffer.write(headers.join(';'));
+    csvBuffer.write('\n');
+
+    for (final row in results) {
+      final List<String> rowValues = [];
+
+      for (final header in headers) {
+        var value = row[header];
+        String stringValue = value?.toString() ?? '';
+
+        // Gestisci caratteri speciali CSV
+        if (stringValue.contains(';') ||
+            stringValue.contains('"') ||
+            stringValue.contains('\n') ||
+            stringValue.contains('\r')) {
+          stringValue = '"${stringValue.replaceAll('"', '""')}"';
+        }
+
+        rowValues.add(stringValue);
+      }
+
+      csvBuffer.write(rowValues.join(';'));
+      csvBuffer.write('\n');
+    }
+
+    final csvContent = csvBuffer.toString();
+
+    // Salva in file temporaneo
+    final tempDir = await getTemporaryDirectory();
+    final timestamp = DateTime.now().millisecondsSinceEpoch;
+    final csvPath = p.join(tempDir.path, 'spartiti_export_$timestamp.csv');
+
+    await File(csvPath).writeAsString(csvContent, flush: true);
+
+    return csvPath;
+  }
+
+
+
+
+  // ============================ METODI ESPORTAZIONE CON PAGINAZIONE (per compatibilità) ============================
+
+  /// Metodo legacy per export con limite (mantenuto per compatibilità)
+  Future<String> exportPaginatedToCsv(int page, int pageSize) async {
+    debugPrint('\n📤 Esportazione PAGINATA - Pagina $page, Size $pageSize');
+    final offset = (page - 1) * pageSize;
+
+    String query = '''
+      SELECT * FROM spartiti 
+      ORDER BY IdBra 
+      LIMIT $pageSize OFFSET $offset
+    ''';
+
+    return await _executeCsvExport(query);
   }
 
   // ============================ METODI HELPER ============================
@@ -1142,6 +1623,122 @@ class DatabaseService with ChangeNotifier {
       debugPrint('⚠️ Errore aggiornamento conteggio catalogo: $e');
     }
   }
+
+  // ============================ NUOVI METODI PER ESPORTAZIONE ============================
+
+  Future<String> _exportWithQuery(String query, {List<dynamic>? args}) async {
+    if (_dbCatalogoAttivo == null) {
+      throw Exception('Database catalogo non caricato');
+    }
+
+    final results = await _dbCatalogoAttivo!.rawQuery(query, args);
+
+    if (results.isEmpty) {
+      return '';
+    }
+
+    final headers = [
+      'IdBra',
+      'titolo',
+      'autore',
+      'strumento',
+      'volume',
+      'PercRadice',
+      'PercResto',
+      'PrimoLink',
+      'TipoMulti',
+      'TipoDocu',
+      'ArchivioProvenienza',
+      'NumPag',
+      'NumOrig',
+      'IdVolume',
+      'IdAutore'
+    ];
+
+    final csvBuffer = StringBuffer();
+    csvBuffer.write(headers.join(';'));
+    csvBuffer.write('\n');
+
+    for (final row in results) {
+      final List<String> rowValues = [];
+
+      for (final header in headers) {
+        var value = row[header];
+        String stringValue = value?.toString() ?? '';
+
+        // Gestisci caratteri speciali CSV
+        if (stringValue.contains(';') ||
+            stringValue.contains('"') ||
+            stringValue.contains('\n') ||
+            stringValue.contains('\r')) {
+          stringValue = '"${stringValue.replaceAll('"', '""')}"';
+        }
+
+        rowValues.add(stringValue);
+      }
+
+      csvBuffer.write(rowValues.join(';'));
+      csvBuffer.write('\n');
+    }
+
+    final csvContent = csvBuffer.toString();
+
+    // Salva in file temporaneo
+    final tempDir = await getTemporaryDirectory();
+    final timestamp = DateTime.now().millisecondsSinceEpoch;
+    final csvPath = p.join(tempDir.path, 'spartiti_export_$timestamp.csv');
+
+    await File(csvPath).writeAsString(csvContent, flush: true);
+
+    return csvPath;
+  }
+
+  Future<List<String>> getDistinctVolumes() async {
+    if (_dbCatalogoAttivo == null) return [];
+
+    final results = await _dbCatalogoAttivo!.rawQuery(
+        "SELECT DISTINCT volume FROM spartiti WHERE tipodocu = 'V' AND IdBra = IdVolume AND volume IS NOT NULL AND volume != '' ORDER BY volume"
+    );
+    return results.map((r) => r['volume'].toString()).toList();
+  }
+
+  Future<List<String>> getDistinctArchivi() async {
+    if (_dbCatalogoAttivo == null) return [];
+
+    final results = await _dbCatalogoAttivo!.rawQuery(
+        "SELECT DISTINCT ArchivioProvenienza FROM spartiti WHERE ArchivioProvenienza IS NOT NULL AND ArchivioProvenienza != '' ORDER BY ArchivioProvenienza"
+    );
+    return results.map((r) => r['ArchivioProvenienza'].toString()).toList();
+  }
+
+  Future<List<String>> getDistinctAutori() async {
+    if (_dbCatalogoAttivo == null) return [];
+
+    final results = await _dbCatalogoAttivo!.rawQuery(
+        "SELECT DISTINCT autore FROM spartiti WHERE autore IS NOT NULL AND autore != '' ORDER BY autore"
+    );
+    return results.map((r) => r['autore'].toString()).toList();
+  }
+
+  Future<List<String>> getDistinctStrumenti() async {
+    if (_dbCatalogoAttivo == null) return [];
+
+    final results = await _dbCatalogoAttivo!.rawQuery(
+        "SELECT DISTINCT strumento FROM spartiti WHERE strumento IS NOT NULL AND strumento != '' ORDER BY strumento"
+    );
+    return results.map((r) => r['strumento'].toString()).toList();
+  }
+
+  Future<List<Map<String, dynamic>>> getVolumiWithIds() async {
+    if (_dbCatalogoAttivo == null) return [];
+
+    return await _dbCatalogoAttivo!.rawQuery(
+        "SELECT DISTINCT IdVolume, volume FROM spartiti WHERE tipodocu = 'V' AND IdBra = IdVolume ORDER BY volume"
+    );
+  }
+
+  // Verifica se il database è caricato
+  bool get isDatabaseLoaded => _dbCatalogoAttivo != null;
 
   Future<void> _debugCsvStructure(String csvPath) async {
     debugPrint('\n🔍 ANALISI STRUTTURA CSV');
@@ -1275,5 +1872,233 @@ class DatabaseService with ChangeNotifier {
         _dbGlobale = null;
       }
     } catch (_) {}
+  }
+// ============================ METODO ESPORTAZIONE STATISTICHE ============================
+
+// ============================ METODO ESPORTAZIONE STATISTICHE (OTTIMIZZATO) ============================
+
+  Future<String> exportCatalogStatsToCsv() async {
+    debugPrint('\n📊 ESPORTAZIONE STATISTICHE CATALOGO');
+
+    if (_dbCatalogoAttivo == null) {
+      throw Exception('Database catalogo non caricato');
+    }
+
+    try {
+      // Query per statistiche
+      final statsQueries = [
+        'SELECT COUNT(*) as totale FROM spartiti',
+        'SELECT COUNT(DISTINCT volume) as volumi_distinti FROM spartiti',
+        'SELECT COUNT(DISTINCT autore) as autori_distinti FROM spartiti',
+        'SELECT COUNT(DISTINCT ArchivioProvenienza) as archivi_distinti FROM spartiti',
+        'SELECT COUNT(*) as record_volume FROM spartiti WHERE tipodocu = "V"',
+        'SELECT COUNT(*) as record_brano FROM spartiti WHERE tipodocu != "V" OR tipodocu IS NULL',
+      ];
+
+      final stats = <String, dynamic>{};
+
+      for (final query in statsQueries) {
+        final result = await _dbCatalogoAttivo!.rawQuery(query);
+        if (result.isNotEmpty) {
+          final key = result.first.keys.first;
+          stats[key] = result.first[key];
+        }
+      }
+
+      // Crea CSV delle statistiche
+      final csvBuffer = StringBuffer();
+      csvBuffer.write('Statistica;Valore\n');
+
+      stats.forEach((key, value) {
+        csvBuffer.write('$key;$value\n');
+      });
+
+      final csvContent = csvBuffer.toString();
+
+      // Salva in file temporaneo
+      final tempDir = await getTemporaryDirectory();
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final csvPath = p.join(tempDir.path, 'catalogo_stats_$timestamp.csv');
+
+      await File(csvPath).writeAsString(csvContent, flush: true);
+
+      debugPrint('📊 Statistiche esportate');
+      debugPrint('💾 File: $csvPath');
+
+      return csvPath;
+
+    } catch (e) {
+      debugPrint('❌ Errore esportazione statistiche: $e');
+      rethrow;
+    }
+  }
+
+  Future<String> _computeCatalogStats() async {
+    try {
+      debugPrint('🔍 Fase 1/5: Query statistiche base...');
+
+      // Query per statistiche principali (solo quelle essenziali)
+      final essentialQueries = [
+        'SELECT COUNT(*) as totale FROM spartiti',
+        'SELECT COUNT(DISTINCT volume) as volumi_distinti FROM spartiti',
+        'SELECT COUNT(DISTINCT autore) as autori_distinti FROM spartiti',
+      ];
+
+      final stats = <String, dynamic>{};
+
+      // Esegui solo le query essenziali
+      for (final query in essentialQueries) {
+        try {
+          final result = await _dbCatalogoAttivo!.rawQuery(query);
+          if (result.isNotEmpty) {
+            final key = result.first.keys.first;
+            stats[key] = result.first[key];
+          }
+          debugPrint('   ✅ Query completata: $query');
+        } catch (e) {
+          debugPrint('   ⚠️ Errore query $query: $e');
+          stats[query.contains('totale') ? 'totale' :
+          query.contains('volumi') ? 'volumi_distinti' :
+          'autori_distinti'] = 0;
+        }
+      }
+
+      debugPrint('🔍 Fase 2/5: Statistiche tipi documento...');
+
+      // Statistiche sui tipi di documento (semplificate)
+      List<Map<String, dynamic>> tipoDocuStats = [];
+      try {
+        tipoDocuStats = await _dbCatalogoAttivo!.rawQuery(
+            'SELECT TipoDocu, COUNT(*) as count FROM spartiti WHERE TipoDocu IS NOT NULL GROUP BY TipoDocu ORDER BY TipoDocu LIMIT 10'
+        );
+        debugPrint('   ✅ Statistiche TipoDocu completate');
+      } catch (e) {
+        debugPrint('   ⚠️ Errore statistiche TipoDocu: $e');
+      }
+
+      debugPrint('🔍 Fase 3/5: Creazione CSV...');
+
+      // Crea CSV delle statistiche (semplificato)
+      final csvBuffer = StringBuffer();
+
+      // Intestazioni
+      csvBuffer.write('REPORT STATISTICHE CATALOGO MUSICALE\n');
+      csvBuffer.write('====================================\n\n');
+
+      csvBuffer.write('STATISTICHE GENERALI\n');
+      csvBuffer.write('===================\n');
+      csvBuffer.write('Statistica;Valore\n');
+
+      // Statistiche generali
+      csvBuffer.write('Record totali nel catalogo;${stats['totale'] ?? 0}\n');
+      csvBuffer.write('Volumi distinti;${stats['volumi_distinti'] ?? 0}\n');
+      csvBuffer.write('Autori distinti;${stats['autori_distinti'] ?? 0}\n');
+
+      // Statistiche per TipoDocu
+      if (tipoDocuStats.isNotEmpty) {
+        csvBuffer.write('\nDISTRIBUZIONE PER TIPODOCU\n');
+        csvBuffer.write('=========================\n');
+        csvBuffer.write('TipoDocu;Conteggio\n');
+
+        for (final stat in tipoDocuStats) {
+          final tipo = stat['TipoDocu']?.toString() ?? 'NULL';
+          final count = stat['count'] ?? 0;
+          csvBuffer.write('$tipo;$count\n');
+        }
+      }
+
+      // Aggiungi metadati
+      csvBuffer.write('\nMETADATI\n');
+      csvBuffer.write('========\n');
+      csvBuffer.write('Campo;Valore\n');
+      csvBuffer.write('Data generazione report;${DateTime.now().toLocal().toString()}\n');
+      csvBuffer.write('Catalogo attivo;$_activeCatalogDbName\n');
+
+      final csvContent = csvBuffer.toString();
+
+      debugPrint('🔍 Fase 4/5: Salvataggio file...');
+
+      // Salva in file temporaneo
+      final tempDir = await getTemporaryDirectory();
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final csvPath = p.join(tempDir.path, 'statistiche_$timestamp.csv');
+
+      await File(csvPath).writeAsString(csvContent, flush: true);
+
+      debugPrint('🔍 Fase 5/5: Completamento...');
+      debugPrint('📊 Statistiche esportate con successo');
+      debugPrint('💾 File: $csvPath');
+      debugPrint('📄 Record totali: ${stats['totale'] ?? 0}');
+
+      return csvPath;
+
+    } catch (e, stackTrace) {
+      debugPrint('❌ ERRORE CALCOLO STATISTICHE');
+      debugPrint('Errore: $e');
+      debugPrint('Stack: $stackTrace');
+      rethrow;
+    }
+  }
+
+  Future<String> _createStatsFallbackFile(String errorMessage) async {
+    debugPrint('🔄 Creazione file di fallback...');
+
+    final csvBuffer = StringBuffer();
+    csvBuffer.write('REPORT STATISTICHE CATALOGO - ERRORE\n');
+    csvBuffer.write('===================================\n\n');
+    csvBuffer.write('⚠️ Impossibile generare statistiche complete\n\n');
+    csvBuffer.write('Informazioni disponibili:\n');
+    csvBuffer.write('========================\n');
+    csvBuffer.write('Messaggio errore;$errorMessage\n');
+    csvBuffer.write('Data;${DateTime.now().toLocal().toString()}\n');
+    csvBuffer.write('Catalogo;$_activeCatalogDbName\n');
+
+    final tempDir = await getTemporaryDirectory();
+    final timestamp = DateTime.now().millisecondsSinceEpoch;
+    final csvPath = p.join(tempDir.path, 'statistiche_errore_$timestamp.csv');
+
+    await File(csvPath).writeAsString(csvBuffer.toString(), flush: true);
+
+    debugPrint('💾 File fallback creato: $csvPath');
+    return csvPath;
+  }
+
+
+  // ============================ METODO PER ELIMINARE FILE CSV VECCHI ============================
+
+  Future<void> cleanupOldCsvFiles({int maxAgeHours = 24}) async {
+    try {
+      final tempDir = await getTemporaryDirectory();
+      final now = DateTime.now();
+      final cutoff = now.subtract(Duration(hours: maxAgeHours));
+
+      final csvFiles = Directory(tempDir.path)
+          .listSync()
+          .where((file) =>
+      file is File &&
+          file.path.toLowerCase().endsWith('.csv') &&
+          file.path.toLowerCase().contains('spartiti_export_'))
+          .cast<File>()
+          .toList();
+
+      int deletedCount = 0;
+
+      for (final file in csvFiles) {
+        final stat = file.statSync();
+        final modified = stat.modified;
+
+        if (modified.isBefore(cutoff)) {
+          await file.delete();
+          deletedCount++;
+        }
+      }
+
+      if (deletedCount > 0) {
+        debugPrint('🧹 Puliti $deletedCount file CSV vecchi (> $maxAgeHours ore)');
+      }
+
+    } catch (e) {
+      debugPrint('⚠️ Errore pulizia file CSV: $e');
+    }
   }
 }

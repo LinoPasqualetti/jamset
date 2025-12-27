@@ -1,0 +1,6 @@
+--select percradice, percresto , primolink, substr(percradice,1,2), substr(percradice,3)|| percresto as NuovoPercresto from spartiti
+update 
+spartiti
+set
+percradice= substr(percradice,1,2),
+percresto = substr(percradice,3)|| percresto 

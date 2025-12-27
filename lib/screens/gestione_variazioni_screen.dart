@@ -3,8 +3,11 @@ import 'package:flutter/material.dart';
 import 'package:livescore/screens/gestione_dati_globali_screen.dart';
 import 'package:livescore/screens/test_apertura_file_screen.dart';
 import 'package:livescore/screens/dichiarazione_file_volume_screen.dart';
-import 'package:livescore/screens/elenco_volumi_catalogo_screen.dart'; // Nuova Schermata
-import 'package:livescore/screens/GestisciElencoCataloghi.dart'; // Gestione Database
+import 'package:livescore/screens/elenco_volumi_catalogo_screen.dart';
+import 'package:livescore/screens/gestisci_elenco_cataloghi.dart'; // Assicurati che esista
+import 'package:livescore/screens/popola_cataloghi_screen.dart';
+import 'package:livescore/screens/export_csv_screen.dart';
+import 'package:livescore/screens/gestione_indici_screen.dart';
 
 class GestioneVariazioniScreen extends StatelessWidget {
   const GestioneVariazioniScreen({super.key});
@@ -77,7 +80,11 @@ class GestioneVariazioniScreen extends StatelessWidget {
                           icon: Icons.backup_outlined,
                           title: 'c) Backup',
                           subtitle: 'Gestisci backup e authority',
-                          onTap: () {},
+                          onTap: () {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Funzionalità Backup in sviluppo')),
+                            );
+                          },
                         ),
                         const SizedBox(width: 8),
                         _buildFeatureButton(
@@ -100,26 +107,28 @@ class GestioneVariazioniScreen extends StatelessWidget {
                       children: [
                         _buildFeatureButton(
                           context,
-                          icon: Icons.find_in_page_outlined,
-                          title: 'e) Test Apertura',
-                          subtitle: 'Testa l\'apertura di un file a una pagina specifica',
+                          icon: Icons.file_upload,
+                          title: 'e) Inserisci da file',
+                          subtitle: 'Importa dati da file CSV/Excel',
                           onTap: () {
                             Navigator.push(
                               context,
-                              MaterialPageRoute(builder: (context) => const TestAperturaFileScreen()),
+                              MaterialPageRoute(builder: (context) => const DichiarazioneFileVolumeScreen()),
                             );
                           },
                         ),
                         const SizedBox(width: 8),
                         _buildFeatureButton(
                           context,
-                          icon: Icons.file_upload,
-                          title: 'f) Inserisci da file',
-                          subtitle: 'Importa dati da file CSV/Excel',
+                          icon: Icons.playlist_add_check,
+                          title: 'f) Popola Cataloghi',
+                          subtitle: 'Gestione e inserimento indici',
                           onTap: () {
                             Navigator.push(
                               context,
-                              MaterialPageRoute(builder: (context) => const DichiarazioneFileVolumeScreen()),
+                              MaterialPageRoute(
+                                builder: (context) => const PopolaCataloghiScreen(),
+                              ),
                             );
                           },
                         ),
@@ -131,17 +140,50 @@ class GestioneVariazioniScreen extends StatelessWidget {
                       children: [
                         _buildFeatureButton(
                           context,
-                          icon: Icons.playlist_add_check,
-                          title: 'g) Popola Cataloghi',
-                          subtitle: 'Trattamento Dati, Archivio PDF e Popolamento',
+                          icon: Icons.tune,
+                          title: 'g) Gestione Indici',
+                          subtitle: 'Produzione e gestione indici FTS',
                           onTap: () {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('Usa "f) Inserisci da file" o il popolamento da Master in Varia Catalogo.')),
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => const GestioneIndiciScreen(),
+                              ),
                             );
                           },
                         ),
                         const SizedBox(width: 8),
-                        Expanded(child: Container()),
+                        _buildFeatureButton(
+                          context,
+                          icon: Icons.file_download,
+                          title: 'h) Export CSV',
+                          subtitle: 'Esporta catalogo in formato CSV',
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => const ExportCsvScreen(),
+                              ),
+                            );
+                          },
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    // Quinta riga (solo un pulsante al centro)
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _buildFeatureButton(
+                            context,
+                            icon: Icons.build,
+                            title: 'i) Strumenti DB',
+                            subtitle: 'Diagnostica e riparazione database',
+                            onTap: () {
+                              _showDatabaseToolsDialog(context);
+                            },
+                          ),
+                        ),
                       ],
                     ),
                   ],
@@ -185,6 +227,63 @@ class GestioneVariazioniScreen extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  void _showDatabaseToolsDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Strumenti Database'),
+        content: const Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('Seleziona un\'operazione sul database attivo:'),
+            SizedBox(height: 16),
+            // Aggiunto Genera Indici FTS
+          ],
+        ),
+        actions: [
+          // Aggiunto pulsante Genera Indici FTS
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              // TODO: Navigare a GeneraIndiciFtsScreen o chiamare direttamente
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Generazione indici FTS...')),
+              );
+            },
+            child: const Text('Genera Indici FTS'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Diagnostica database in esecuzione...')),
+              );
+            },
+            child: const Text('Diagnostica'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Riparazione FTS in esecuzione...')),
+              );
+            },
+            child: const Text('Ripara FTS'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Ottimizzazione database in esecuzione...')),
+              );
+            },
+            child: const Text('Ottimizza'),
+          ),
+        ],
       ),
     );
   }
