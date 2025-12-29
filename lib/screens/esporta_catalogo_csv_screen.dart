@@ -787,7 +787,7 @@ class _EsportaCatalogoCsvScreenState extends State<EsportaCatalogoCsvScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Esporta Catalogo in CSV'),
+        title: const Text('Esporta Porzioni di Catalogo in CSV'),
         actions: [
           if (_consoleOutput.isNotEmpty)
             IconButton(

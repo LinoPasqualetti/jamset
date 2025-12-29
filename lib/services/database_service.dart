@@ -1,4 +1,4 @@
-// lib/services/database_service.dart - VERSIONE FINALE CON SCHEMA CORRETTO
+// lib/services/database_service.dart - VERSIONE CORRETTA
 import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
@@ -362,6 +362,54 @@ class DatabaseService with ChangeNotifier {
     }
   }
 
+  // 🔥 NUOVO METODO: Ottieni tutti i file CSV dalla cartella temporanea
+  Future<List<Map<String, dynamic>>> getTempCsvFiles() async {
+    try {
+      final tempDir = await getTemporaryDirectory();
+      final files = await tempDir.list().toList();
+
+      List<Map<String, dynamic>> csvFiles = [];
+
+      for (final entity in files) {
+        if (entity is File) {
+          final path = entity.path;
+          final fileName = p.basename(path);
+
+          if (fileName.toLowerCase().endsWith('.csv') ||
+              fileName.toLowerCase().endsWith('.txt')) {
+
+            final stat = entity.statSync();
+            final size = stat.size;
+            final modified = stat.modified;
+
+            csvFiles.add({
+              'path': path,
+              'name': fileName,
+              'size': size,
+              'modified': modified,
+              'sizeFormatted': _formatFileSize(size),
+              'dateFormatted': '${modified.day}/${modified.month}/${modified.year} ${modified.hour}:${modified.minute}',
+            });
+          }
+        }
+      }
+
+      // Ordina per data di modifica (più recenti prima)
+      csvFiles.sort((a, b) => b['modified'].compareTo(a['modified']));
+
+      return csvFiles;
+    } catch (e) {
+      debugPrint('❌ Errore lettura file temporanei: $e');
+      return [];
+    }
+  }
+
+  String _formatFileSize(int bytes) {
+    if (bytes < 1024) return '$bytes B';
+    if (bytes < 1048576) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    return '${(bytes / 1048576).toStringAsFixed(1)} MB';
+  }
+
   Future<void> _creaSchemaECopiaDatiConTrigger(String dbName) async {
     final dbPath = p.join(_databasePath, dbName);
 
@@ -391,6 +439,7 @@ class DatabaseService with ChangeNotifier {
   }
 
   Future<void> _copiaDatiDaAssetConIndicizzazioneAutomatica(Database db, String dbName) async {
+    int copiedCount = 0; // 🔥 DICHIARATO QUI
     try {
       debugPrint('📥 Caricamento asset...');
 
@@ -415,7 +464,6 @@ class DatabaseService with ChangeNotifier {
 
       debugPrint('🔄 Copia dati con indicizzazione automatica...');
 
-      int copiedCount = 0;
       const batchSize = 1000;
 
       for (int i = 0; i < total; i += batchSize) {
@@ -453,12 +501,61 @@ class DatabaseService with ChangeNotifier {
         debugPrint('⚠️  Discrepanza! Trigger FTS potrebbero non funzionare');
       }
 
+      // 🔥 AGGIUNTO: Aggiorna conteggio nel catalogo
+      await _updateCatalogCount(dbName, numSpartiti);
+
       await tempDb.close();
       await File(tempPath).delete();
 
     } catch (e) {
       debugPrint('❌ Errore copia dati: $e');
       rethrow;
+    }
+  }
+
+  Future<void> syncAllCatalogCounts() async {
+    try {
+      if (_dbGlobale == null) {
+        debugPrint('❌ Database globale non disponibile');
+        return;
+      }
+
+      debugPrint('\n🔄 Sincronizzazione conteggi cataloghi');
+      debugPrint('=====================================');
+
+      final cataloghi = await _dbGlobale!.query('elenco_cataloghi');
+
+      for (final catalogo in cataloghi) {
+        final dbName = catalogo['nome_file_db'] as String?;
+        final nomeCatalogo = catalogo['nome_catalogo'] as String? ?? 'Sconosciuto';
+
+        if (dbName != null && dbName.isNotEmpty) {
+          try {
+            final dbPath = p.join(_databasePath, dbName);
+
+            if (await File(dbPath).exists()) {
+              final db = await openDatabase(dbPath, readOnly: true);
+              final countResult = await db.rawQuery('SELECT COUNT(*) as count FROM spartiti');
+              final count = countResult.first['count'] as int? ?? 0;
+              await db.close();
+
+              await _updateCatalogCount(dbName, count);
+
+              debugPrint('✅ $nomeCatalogo ($dbName): $count brani');
+            } else {
+              debugPrint('⚠️ $nomeCatalogo: database non trovato');
+              await _updateCatalogCount(dbName, 0);
+            }
+          } catch (e) {
+            debugPrint('❌ Errore sincronizzazione $nomeCatalogo: $e');
+          }
+        }
+      }
+
+      debugPrint('✅ Sincronizzazione conteggi completata');
+
+    } catch (e) {
+      debugPrint('❌ Errore sincronizzazione globale: $e');
     }
   }
 
@@ -572,26 +669,34 @@ class DatabaseService with ChangeNotifier {
       // Pulisci FTS
       await db.execute('DELETE FROM spartiti_fts');
 
-      // Ricopia tutti i dati
-      final spartiti = await db.rawQuery('SELECT * FROM spartiti');
-      final total = spartiti.length;
+      // Conta record totali
+      final countResult = await db.rawQuery('SELECT COUNT(*) as count FROM spartiti');
+      final total = countResult.first['count'] as int? ?? 0;
 
       debugPrint('🔄 Ricopiando $total record...');
 
       int reindexed = 0;
       await db.transaction((txn) async {
-        for (final spartito in spartiti) {
-          await txn.insert('spartiti_fts', {
-            'rowid': spartito['IdBra'],
-            'titolo': spartito['titolo'] ?? '',
-            'autore': spartito['autore'] ?? '',
-            'volume': spartito['volume'] ?? '',
-            'ArchivioProvenienza': spartito['ArchivioProvenienza'] ?? ''
-          });
-          reindexed++;
+        for (int i = 0; i < total; i += 100) {
+          final batchResult = await txn.rawQuery('''
+          SELECT IdBra, titolo, autore, volume, ArchivioProvenienza 
+          FROM spartiti 
+          LIMIT 100 OFFSET $i
+        ''');
 
-          if (onProgress != null && total > 0) {
-            onProgress(reindexed / total);
+          for (final spartito in batchResult) {
+            await txn.insert('spartiti_fts', {
+              'rowid': spartito['IdBra'],
+              'titolo': spartito['titolo'] ?? '',
+              'autore': spartito['autore'] ?? '',
+              'volume': spartito['volume'] ?? '',
+              'ArchivioProvenienza': spartito['ArchivioProvenienza'] ?? ''
+            });
+            reindexed++;
+
+            if (onProgress != null && total > 0) {
+              onProgress(reindexed / total);
+            }
           }
 
           if (reindexed % 1000 == 0) {
@@ -600,12 +705,16 @@ class DatabaseService with ChangeNotifier {
         }
       });
 
+      // 🔥 AGGIUNTO: Aggiorna conteggio_brani nel catalogo
+      await _updateCatalogCount(_activeCatalogDbName, total);
+
       // Riattiva trigger
       await _creaTriggerFTS(db);
 
       await db.close();
 
       debugPrint('✅ Reindicizzazione completata: $reindexed record');
+      debugPrint('📊 Conteggio aggiornato: $total brani nel catalogo');
 
       notifyListeners();
 
@@ -833,8 +942,8 @@ class DatabaseService with ChangeNotifier {
         csvContent = csvContent.substring(1);
       }
 
-      // Processa righe
-      List<String> lines = csvContent
+      // 🔥 DICHIARA QUI le variabili
+      final lines = csvContent
           .replaceAll('\r\n', '\n')
           .replaceAll('\r', '\n')
           .split('\n')
@@ -931,6 +1040,7 @@ class DatabaseService with ChangeNotifier {
       await _disableTriggers(db);
       await db.execute('DELETE FROM spartiti_fts');
 
+      // 🔥 DICHIARA QUI le variabili per le statistiche
       int importedCount = 0;
       int errorCount = 0;
       const int batchSize = 500;
@@ -1051,7 +1161,7 @@ class DatabaseService with ChangeNotifier {
       debugPrint('   - Errori: $errorCount');
       debugPrint('   - Successo: ${lines.length > 1 ? (importedCount / (lines.length - 1) * 100).toStringAsFixed(1) : 0}%');
 
-      // Aggiorna conteggio nel catalogo
+      // 🔥 MODIFICATO: Aggiorna conteggio nel catalogo
       await _updateCatalogCount(targetDbName, recordsAfter);
 
       return importedCount;
@@ -1642,21 +1752,26 @@ class DatabaseService with ChangeNotifier {
   Future<void> _rebuildFTS(Database db) async {
     try {
       debugPrint('🔄 Ricostruzione indice FTS...');
-      await db.execute('DELETE FROM spartiti_fts');
 
-      // Inserisci tutti i record da spartiti a spartiti_fts
-      final count = await db.rawQuery('SELECT COUNT(*) as count FROM spartiti');
-      final total = count.first['count'] as int? ?? 0;
+      // Conta record totali prima di ricostruire
+      final countResult = await db.rawQuery('SELECT COUNT(*) as count FROM spartiti');
+      final total = countResult.first['count'] as int? ?? 0;
+
+      await db.execute('DELETE FROM spartiti_fts');
 
       debugPrint('   Ricostruendo $total record...');
 
       await db.rawQuery('''
-        INSERT INTO spartiti_fts(rowid, titolo, autore, volume, ArchivioProvenienza)
-        SELECT IdBra, titolo, autore, volume, ArchivioProvenienza 
-        FROM spartiti
-      ''');
+      INSERT INTO spartiti_fts(rowid, titolo, autore, volume, ArchivioProvenienza)
+      SELECT IdBra, titolo, autore, volume, ArchivioProvenienza 
+      FROM spartiti
+    ''');
 
       debugPrint('✅ Indice FTS ricostruito ($total record)');
+
+      // 🔥 MODIFICATO: Il chiamante dovrà ottenere il conteggio separatamente
+      return;
+
     } catch (e) {
       debugPrint('❌ Errore ricostruzione FTS: $e');
       // Tentativo alternativo
@@ -1672,19 +1787,33 @@ class DatabaseService with ChangeNotifier {
   Future<void> _updateCatalogCount(String dbName, int count) async {
     try {
       if (_dbGlobale != null) {
-        await _dbGlobale!.update(
+        // Verifica se il catalogo esiste
+        final catalogo = await _dbGlobale!.query(
             'elenco_cataloghi',
-            {
-              'conteggio_brani': count,
-              'data_ultimo_aggiornamento': DateTime.now().toIso8601String()
-            },
             where: 'nome_file_db = ?',
-            whereArgs: [dbName]
+            whereArgs: [dbName],
+            limit: 1
         );
-        debugPrint('📊 Conteggio catalogo aggiornato: $count brani');
+
+        if (catalogo.isNotEmpty) {
+          await _dbGlobale!.update(
+              'elenco_cataloghi',
+              {
+                'conteggio_brani': count,
+                'data_ultimo_aggiornamento': DateTime.now().toIso8601String()
+              },
+              where: 'nome_file_db = ?',
+              whereArgs: [dbName]
+          );
+          debugPrint('📊 Conteggio catalogo aggiornato: $count brani');
+        } else {
+          debugPrint('⚠️ Catalogo non trovato: $dbName');
+        }
+      } else {
+        debugPrint('⚠️ Database globale non disponibile');
       }
     } catch (e) {
-      debugPrint('⚠️ Errore aggiornamento conteggio catalogo: $e');
+      debugPrint('❌ Errore aggiornamento conteggio catalogo: $e');
     }
   }
 
